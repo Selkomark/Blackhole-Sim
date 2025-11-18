@@ -1,14 +1,52 @@
 #include "../../include/ui/HUD.hpp"
 #include "../../include/utils/Vector3.hpp"
+#include "../../include/utils/ResolutionManager.hpp"
 #include <string>
 #include <cmath>
+#include <sstream>
 
 HUD::HUD(SDL_Renderer *renderer, TTF_Font *font)
     : renderer(renderer), font(font), hintsVisible(true) {}
 
-void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight) {
+// Helper function to format resolution as readable string (4K, 1080p, etc.)
+std::string formatResolution(int width, int height, ResolutionManager* resolutionManager) {
+  if (!resolutionManager) {
+    return std::to_string(width) + "×" + std::to_string(height);
+  }
+  
+  const Resolution& res = resolutionManager->getCurrent();
+  if (res.name && res.name[0] != '\0') {
+    // Extract common format names
+    std::string name = res.name;
+    if (name.find("4K") != std::string::npos || name.find("2160p") != std::string::npos) {
+      return "4K";
+    } else if (name.find("1080p") != std::string::npos) {
+      return "1080p";
+    } else if (name.find("1440p") != std::string::npos || name.find("QHD") != std::string::npos) {
+      return "1440p";
+    } else if (name.find("720p") != std::string::npos) {
+      return "720p";
+    } else if (name.find("5K") != std::string::npos) {
+      return "5K";
+    } else if (name.find("8K") != std::string::npos) {
+      return "8K";
+    } else if (name == "Native") {
+      return "Native";
+    }
+    // Return the name as-is if it's already formatted
+    return name;
+  }
+  
+  // Fallback to dimensions
+  return std::to_string(width) + "×" + std::to_string(height);
+}
+
+void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, ResolutionManager* resolutionManager) {
   if (!showHints || !font)
     return;
+
+  // Format resolution
+  std::string resolutionStr = formatResolution(windowWidth, windowHeight, resolutionManager);
 
   // Define hints array first to calculate content width
   std::string hints[] = {
@@ -16,11 +54,13 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
     "L/J - Rotate Up Axis",
     "I/K - Rotate Right Axis",
     "O/U - Rotate Forward Axis",
-    "WASD - Move",
-    "Space/Shift - Up/Down",
+    "W/S - Move Up/Down",
+    "D - Zoom In",
+    "A - Zoom Back",
     "R - Reset",
     "C - Mode: " + std::string(getCinematicModeName(mode)),
-    "+/- - Resolution",
+    "Resolution: " + resolutionStr,
+    "+/- - Change Resolution",
     "F - Fullscreen",
     "Tab - Toggle Help",
     "ESC/Q - Quit",
@@ -29,11 +69,11 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
 
   // Calculate maximum text width to make overlay responsive
   int maxTextWidth = 0;
-  int lineHeight = 20;
+  int lineHeight = 26; // Increased for larger font
   int padding = 12;
   int textPadding = 16;
   
-  for (int i = 0; i < 13; i++) {
+  for (int i = 0; i < 15; i++) {
     SDL_Surface *testSurface = TTF_RenderText_Blended(font, hints[i].c_str(), {255, 255, 255, 255});
     if (testSurface) {
       maxTextWidth = std::max(maxTextWidth, static_cast<int>(testSurface->w));
@@ -43,7 +83,7 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
   
   // Calculate overlay dimensions based on content
   int overlayWidth = maxTextWidth + (textPadding * 2);
-  int overlayHeight = (13 * lineHeight) + (textPadding * 2);
+  int overlayHeight = (15 * lineHeight) + (textPadding * 2); // Updated for 15 hints
   
   // Ensure overlay doesn't exceed window bounds
   overlayWidth = std::min(overlayWidth, windowWidth - (padding * 2));
@@ -76,10 +116,11 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
 
   // Render text with proper positioning
   int y = overlayY + textPadding;
-  for (int i = 0; i < 13; i++) {
+  for (int i = 0; i < 15; i++) {
     SDL_Color color = (i == 0) ? highlightColor
-                      : (i == 7) ? cinematicColor
-                      : (i == 12) ? fpsColor
+                      : (i == 8) ? cinematicColor
+                      : (i == 9) ? highlightColor // Highlight resolution
+                      : (i == 14) ? fpsColor
                                  : textColor;
     
     // Ensure text doesn't overflow - clip if necessary

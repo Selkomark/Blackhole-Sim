@@ -3,9 +3,9 @@
 #include <cmath>
 
 CinematicCamera::CinematicCamera(Camera &camera, const Vector3 &initialPosition)
-    : cam(camera), initialPos(initialPosition), mode(CinematicMode::SmoothOrbit),
+    : cam(camera), initialPos(initialPosition), mode(CinematicMode::Manual),
       orbitAngle(0.0), orbitRadius(15.0), cinematicTime(0.0),
-      rotationSpeed(1.0) {} // Reduced from 3.0 to 1.0 for smoother rotation
+      rotationSpeed(1.0) {} // Start in Manual mode by default
 
 void CinematicCamera::update(double deltaTime, const uint8_t *keyStates) {
   // Always advance time, even if deltaTime is small
@@ -47,24 +47,26 @@ void CinematicCamera::updateManualMode(double deltaTime, const uint8_t *keyState
   
   double moveSpeed = 2.0 * deltaTime; // Reduced from 5.0 to 2.0 for smoother movement
   
-  // Use camera's current basis vectors (already updated by updateCameraLookDirection)
-  if (keyStates[SDL_SCANCODE_W]) {
-    movement += cam.forward * moveSpeed;
-  }
-  if (keyStates[SDL_SCANCODE_S]) {
-    movement -= cam.forward * moveSpeed;
+  // Controls:
+  // W: Move up
+  // S: Move down
+  // D: Zoom in / Move forward
+  // A: Zoom back / Move backward
+  
+  // Forward/backward movement (zoom)
+  if (keyStates[SDL_SCANCODE_D]) {
+    movement += cam.forward * moveSpeed; // Zoom in / Move forward
   }
   if (keyStates[SDL_SCANCODE_A]) {
-    movement -= cam.right * moveSpeed;
+    movement -= cam.forward * moveSpeed; // Zoom back / Move backward
   }
-  if (keyStates[SDL_SCANCODE_D]) {
-    movement += cam.right * moveSpeed;
+  
+  // Up/down movement
+  if (keyStates[SDL_SCANCODE_W]) {
+    movement += cam.up * moveSpeed; // Move up
   }
-  if (keyStates[SDL_SCANCODE_SPACE]) {
-    movement += cam.up * moveSpeed;
-  }
-  if (keyStates[SDL_SCANCODE_LSHIFT]) {
-    movement -= cam.up * moveSpeed;
+  if (keyStates[SDL_SCANCODE_S]) {
+    movement -= cam.up * moveSpeed; // Move down
   }
   
   // Apply movement - camera stays where you move it
@@ -150,29 +152,54 @@ void CinematicCamera::updateCameraLookDirection(double deltaTime) {
   const Uint8 *keyStates = SDL_GetKeyboardState(nullptr);
   double rotSpeed = rotationSpeed * deltaTime; // Use actual deltaTime for smooth rotation
   
-  // First, ensure camera basis vectors are valid
-  Vector3 toCenter = Vector3(0, 0, 0) - cam.position;
-  double distance = toCenter.length();
+  Vector3 currentForward, currentRight, currentUp;
   
-  if (distance < 0.001) {
-    // Too close, use default forward
-    cam.lookAt(Vector3(0, 0, 0));
-    return;
-  }
-  
-  // Get current camera basis vectors (or create initial ones if invalid)
-  Vector3 currentForward = (cam.forward.length() > 0.001) ? cam.forward : toCenter.normalized();
-  Vector3 currentRight = cam.right;
-  Vector3 currentUp = cam.up;
-  
-  // Establish valid basis if needed
-  if (currentRight.length() < 0.001 || currentUp.length() < 0.001) {
+  // In cinematic modes (non-manual), always point camera at black hole center
+  // In manual mode, preserve current orientation unless vectors are invalid
+  if (mode != CinematicMode::Manual) {
+    // Cinematic modes: always look at black hole center
+    Vector3 toCenter = Vector3(0, 0, 0) - cam.position;
+    double distance = toCenter.length();
+    
+    if (distance < 0.001) {
+      // Too close, use default forward
+      cam.lookAt(Vector3(0, 0, 0));
+      return;
+    }
+    
+    currentForward = toCenter.normalized();
     Vector3 worldUp(0, 1, 0);
     currentRight = currentForward.cross(worldUp).normalized();
     if (currentRight.length() < 0.001) {
       currentRight = currentForward.cross(Vector3(1, 0, 0)).normalized();
     }
     currentUp = currentRight.cross(currentForward).normalized();
+  } else {
+    // Manual mode: preserve current orientation, only recalculate if invalid
+    currentForward = cam.forward;
+    currentRight = cam.right;
+    currentUp = cam.up;
+    
+    // Only recalculate if basis vectors are invalid
+    if (currentForward.length() < 0.001 || currentRight.length() < 0.001 || currentUp.length() < 0.001) {
+      // Recalculate from position to center
+      Vector3 toCenter = Vector3(0, 0, 0) - cam.position;
+      double distance = toCenter.length();
+      
+      if (distance < 0.001) {
+        // Too close, use default forward
+        cam.lookAt(Vector3(0, 0, 0));
+        return;
+      }
+      
+      currentForward = toCenter.normalized();
+      Vector3 worldUp(0, 1, 0);
+      currentRight = currentForward.cross(worldUp).normalized();
+      if (currentRight.length() < 0.001) {
+        currentRight = currentForward.cross(Vector3(1, 0, 0)).normalized();
+      }
+      currentUp = currentRight.cross(currentForward).normalized();
+    }
   }
   
   // Apply rotations incrementally ONLY when keys are pressed
@@ -230,18 +257,7 @@ void CinematicCamera::updateCameraLookDirection(double deltaTime) {
   }
   rotatedUp = rotatedRight.cross(rotatedForward).normalized();
   
-  // Update camera basis
-  cam.forward = rotatedForward;
-  cam.right = rotatedRight;
-  cam.up = rotatedUp;
-  
-  // Calculate look target
-  Vector3 lookTarget = cam.position + rotatedForward * distance;
-  
-  // Update camera (lookAt will recalculate basis, so we override after)
-  cam.lookAt(lookTarget);
-  
-  // Restore our rotated basis (lookAt might have changed them)
+  // Update camera basis directly (don't use lookAt as it recalculates)
   cam.forward = rotatedForward;
   cam.right = rotatedRight;
   cam.up = rotatedUp;

@@ -60,8 +60,8 @@ bool Application::initialize() {
     return false;
   }
 
-  // Load font
-  font = TTF_OpenFont("/System/Library/Fonts/Helvetica.ttc", 18);
+  // Load font with larger size for better readability
+  font = TTF_OpenFont("/System/Library/Fonts/Helvetica.ttc", 24);
   if (!font) {
     std::cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << std::endl;
   }
@@ -85,6 +85,10 @@ bool Application::initialize() {
   Vector3 initialPos(0, 3, -20); // Increased distance from -15 to -20 for better initial view
   camera = new Camera(initialPos, Vector3(0, 0, 0), 60.0); // Points at black hole center
   cinematicCamera = new CinematicCamera(*camera, initialPos);
+  
+  // Ensure camera is properly initialized to look at black hole center
+  // Force update camera look direction to establish correct initial orientation
+  camera->lookAt(Vector3(0, 0, 0));
   hud = new HUD(sdlRenderer, font);
 
   running = true;
@@ -250,7 +254,7 @@ void Application::render(double elapsedTime) {
   }
 
   // Render HUD
-  hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight);
+  hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager);
 
   // Always present - this must happen every frame
   // Force presentation even if SDL thinks nothing changed
@@ -296,6 +300,13 @@ void Application::toggleFullscreen() {
   
   // Get new window size after fullscreen toggle
   SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+  
+  // Update resolution manager to match actual window size
+  if (isFullscreen) {
+    // In fullscreen, use native resolution
+    resolutionManager->setResolution(resolutionManager->findClosestPreset(windowWidth, windowHeight));
+  }
+  
   handleWindowResize(windowWidth, windowHeight);
   
   // Fullscreen toggle logging removed
@@ -344,7 +355,6 @@ void Application::recreateRenderTargets() {
 void Application::updateWindowTitle() {
   std::string title = "Black Hole Simulation - " +
                       std::string(cinematicCamera->getModeName()) +
-                      " - " + std::to_string(windowWidth) + "×" + std::to_string(windowHeight) +
                       " - FPS: " + std::to_string(currentFPS);
   SDL_SetWindowTitle(window, title.c_str());
 }
