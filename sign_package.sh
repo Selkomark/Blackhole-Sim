@@ -42,26 +42,12 @@ echo "✓ App bundle created: ${APP_BUNDLE}"
 
 # Step 4: Sign the app (optional)
 echo "[4/4] Signing application..."
-IDENTITY="${MACOS_SIGNING_IDENTITY:-}"
-if [ -z "$IDENTITY" ]; then
-    echo "  ⚠ No signing identity found. Attempting to find Developer ID..."
-    IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "")
-fi
-
-if [ -z "$IDENTITY" ]; then
-    echo "  ⚠ Skipping code signing (no certificate found)"
-    echo "  To sign the app, set MACOS_SIGNING_IDENTITY environment variable:"
-    echo "    export MACOS_SIGNING_IDENTITY='Developer ID Application: Your Name (TEAM_ID)'"
+if ! make sign 2>&1; then
+    echo "  ⚠ Signing failed or skipped"
     SKIP_SIGN=true
 else
-    echo "  Using identity: ${IDENTITY}"
-    if ! make sign > /dev/null 2>&1; then
-        echo "  ⚠ Signing failed, but continuing..."
-        SKIP_SIGN=true
-    else
-        echo "✓ App signed successfully"
-        SKIP_SIGN=false
-    fi
+    echo "✓ App signed and verified successfully"
+    SKIP_SIGN=false
 fi
 
 # Step 5: Create DMG

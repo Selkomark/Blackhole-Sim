@@ -74,12 +74,31 @@ This creates `export/BlackHoleSim.app` with:
 
 ## Code Signing
 
-### Find Your Signing Identity
+### Interactive Signing (Recommended)
+
+When you run `make sign` or `./sign_package.sh`, the script will:
+
+1. **Display all available signing identities** from your keychain
+2. **Prompt you to select** which identity to use
+3. **Sign the application** with your selected identity
+4. **Verify the signature** automatically
+
+Example:
 ```bash
-security find-identity -v -p codesigning
+make sign
 ```
 
-### Sign the App
+You'll see:
+```
+Available code signing identities:
+-----------------------------------
+  [1] Developer ID Application: Your Name (TEAM_ID)
+  [2] Apple Development: Your Name (TEAM_ID)
+
+Select identity number (1-2): 1
+```
+
+### Manual Signing
 
 **Option 1: Using Environment Variable**
 ```bash
@@ -87,11 +106,8 @@ export MACOS_SIGNING_IDENTITY="Developer ID Application: Your Name (TEAM_ID)"
 make sign
 ```
 
-**Option 2: Automatic Detection**
-The `sign_package.sh` script will automatically attempt to find a Developer ID certificate if `MACOS_SIGNING_IDENTITY` is not set.
-
-**Option 3: Skip Signing**
-If you don't have a certificate, the app will still work but macOS may show warnings. You can skip signing by not running `make sign`.
+**Option 2: Skip Signing**
+If you don't have a certificate or choose not to sign, the app will still work but macOS may show warnings.
 
 **Note**: For distribution outside the Mac App Store, you need a "Developer ID Application" certificate from Apple Developer.
 
@@ -154,10 +170,24 @@ open export/BlackHoleSim-1.0.dmg
 ```
 
 ### Verify Signature
+
+The signing script automatically verifies the signature after signing. To manually verify:
+
 ```bash
+# Basic verification
 codesign --verify --verbose export/BlackHoleSim.app
+
+# Detailed signature information
+codesign -dvv export/BlackHoleSim.app
+
+# Gatekeeper assessment
 spctl --assess --verbose export/BlackHoleSim.app
 ```
+
+**Expected output for successful signing:**
+- `✓ Code signature verified`
+- `✓ Gatekeeper assessment passed` (or warning if not notarized)
+- Signature details showing Authority, Identifier, and TeamIdentifier
 
 ## File Structure
 
