@@ -7,7 +7,7 @@ A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tra
 ## Features
 
 - **GPU Accelerated**: Real-time Metal compute shader ray tracing for maximum performance
-- **Dynamic Resolution**: Renders at any window size, adapts to screen resolution
+- **Dynamic Resolution**: Renders at any window size, adapts to screen resolution (144p to 8K)
 - **Fullscreen Support**: Toggle fullscreen mode with F key, ESC to exit
 - **Resizable Window**: Drag window edges to resize, rendering adapts automatically
 - **Accurate Physics**: Schwarzschild metric geodesic integration using RK4 (Runge-Kutta 4th order)
@@ -15,13 +15,14 @@ A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tra
 - **Volumetric Rendering**: Realistic accretion disk with white-hot temperature gradients
 - **Cinematic Camera**: 5 cinematic modes including smooth orbit, wave motion, rising spiral, and close fly-by
 - **Continuous Animation**: Camera is always in motion for dynamic viewing experience
+- **Video Recording**: Record high-quality videos with Command+R (H.264 encoding)
 - **Real-time Performance**: 30+ FPS at any resolution on Apple Silicon
 
 ## Prerequisites
 
 - **macOS** with **Apple Silicon** (M1/M2/M3/M4) or Intel with Metal support
 - **Xcode Command Line Tools** (for clang++ and Metal compiler)
-- **Homebrew** (for installing dependencies)
+- **vcpkg** (dependency manager - included in repository)
 
 > **⚠️ GPU Required**: This simulation requires Metal GPU acceleration and will not run without it.
 
@@ -35,23 +36,16 @@ git clone <your-repo-url> blackhole_simulation
 cd blackhole_simulation
 ```
 
-### 2. Install vcpkg and Dependencies
+### 2. Install Dependencies
 
-The project uses vcpkg for dependency management. The setup script will:
-- Download and bootstrap vcpkg locally
-- Install SDL2
+The project uses vcpkg for dependency management. Dependencies are declared in `vcpkg.json`:
 
 ```bash
-# Download vcpkg
-curl -L -o vcpkg.zip https://github.com/microsoft/vcpkg/archive/refs/heads/master.zip
-unzip -q vcpkg.zip
-mv vcpkg-master vcpkg
-
-# Bootstrap vcpkg
+# Bootstrap vcpkg (if not already done)
 ./vcpkg/bootstrap-vcpkg.sh
 
-# Install SDL2
-./vcpkg/vcpkg install sdl2
+# Install all dependencies
+./vcpkg/vcpkg install
 ```
 
 ### 3. Build the Project
@@ -60,63 +54,17 @@ mv vcpkg-master vcpkg
 make
 ```
 
+The executable will be created in `export/blackhole_sim`.
+
 ## Running the Simulation
 
-### Quick Run
-
 ```bash
-./blackhole_sim
+make run
+# or
+./export/blackhole_sim
 ```
 
 The simulation window will open with the camera automatically orbiting the black hole.
-
-### Build and Run Script
-
-For convenience, use the build-and-run script:
-
-```bash
-./run.sh
-```
-
-This will automatically build the project and then run the simulation.
-
-### Auto-Rebuild on File Changes
-
-To automatically rebuild and run the simulation whenever you make changes to the code:
-
-```bash
-./watch.sh
-```
-
-This script watches for changes in `src/`, `shaders/`, `include/`, and `Makefile`, then automatically rebuilds and restarts the simulation. Requires `fswatch` (install with `brew install fswatch`).
-
-**Note**: The watch script will kill any existing simulation instance before starting a new one.
-
-### Using Cursor
-
-**Quick Run Script:**
-```bash
-./cursor-run.sh
-```
-
-This script builds and runs the simulation with helpful output. You can execute it directly from Cursor's integrated terminal.
-
-**Watch Mode (Auto-rebuild on changes):**
-```bash
-./watch.sh
-```
-
-This will automatically rebuild and restart the simulation whenever you save changes to source files, shaders, or the Makefile.
-
-### Using VS Code Tasks
-
-If you're using VS Code, you can use the built-in tasks:
-
-- **Build**: `Cmd+Shift+B` (or `Ctrl+Shift+B`) - Builds the project
-- **Run Task**: `Cmd+Shift+P` → "Tasks: Run Task" → Select:
-  - `Run Black Hole Simulation` - Builds and runs once
-  - `Watch and Auto-Run` - Watches for changes and auto-rebuilds/runs
-  - `Clean Build` - Cleans and rebuilds from scratch
 
 ## Controls
 
@@ -125,15 +73,14 @@ If you're using VS Code, you can use the built-in tasks:
 | **F** | Toggle fullscreen mode |
 | **+/-** | Increase/Decrease resolution (cycles through presets) |
 | **C** | Cycle through cinematic camera modes |
-| **Arrow Keys** or **IJKL** | Rotate camera view (works in all modes) |
-| **W** | Move camera forward (Manual mode only) |
-| **A** | Move camera left (Manual mode only) |
-| **S** | Move camera backward (Manual mode only) |
-| **D** | Move camera right (Manual mode only) |
-| **Space** | Move camera up (Manual mode only) |
-| **Shift** | Move camera down (Manual mode only) |
+| **IJKL** | Rotate camera view (I/K: Right axis, J/L: Up axis) |
+| **OU** | Rotate Forward axis (works in all modes) |
+| **W/S** | Move camera up/down (Manual mode only) |
+| **A/D** | Zoom in/out (Manual mode only) |
 | **R** | Reset camera position & rotation |
 | **Tab** | Toggle control hints overlay |
+| **Cmd+R** | Start video recording |
+| **Enter/Esc/Q** | Stop video recording (when recording) |
 | **ESC** | Exit fullscreen (if in fullscreen) or quit |
 | **Q** | Quit simulation |
 
@@ -151,7 +98,6 @@ The application starts at **1080p FHD (1920×1080)** by default. Available prese
 - **2160p 4K** (3840×2160) - Ultra HD 4K
 - **2880p 5K** (5120×2880) - 5K resolution
 - **4320p 8K** (7680×4320) - 8K resolution
-- **Native** - Your display's native resolution
 
 Change resolution at any time using **+** (increase) or **-** (decrease) keys. The rendering automatically adapts to the new resolution.
 
@@ -173,42 +119,26 @@ The project is organized by domain/responsibility for better maintainability:
 
 ```
 blackhole_simulation/
-├── src/
-│   ├── main.cpp                    # Entry point (minimal)
-│   ├── core/
-│   │   └── Application.cpp         # Main application loop, SDL, event handling
-│   ├── camera/
-│   │   ├── Camera.cpp              # Base camera struct
-│   │   └── CinematicCamera.cpp    # Cinematic camera system (5 modes)
-│   ├── ui/
-│   │   └── HUD.cpp                 # Heads-up display, overlay rendering
-│   ├── physics/
-│   │   └── BlackHole.cpp           # Physics, geodesic integration
-│   └── rendering/
-│       └── MetalRTRenderer.mm      # Metal GPU ray tracing renderer
+├── src/                            # Source files
+│   ├── main.cpp                    # Entry point
+│   ├── core/                       # Application lifecycle
+│   ├── camera/                     # Camera system
+│   ├── ui/                         # HUD and overlays
+│   ├── physics/                    # Black hole physics
+│   ├── rendering/                  # Metal GPU renderer
+│   └── utils/                      # Utilities (video recording, etc.)
 │
-├── include/
-│   ├── core/
-│   │   └── Application.hpp
-│   ├── camera/
-│   │   ├── Camera.hpp
-│   │   └── CinematicCamera.hpp
-│   ├── ui/
-│   │   └── HUD.hpp
-│   ├── physics/
-│   │   └── BlackHole.hpp
-│   ├── rendering/
-│   │   └── MetalRTRenderer.h
-│   └── utils/
-│       └── Vector3.hpp             # Math utilities
-│
-├── shaders/
-│   └── RayTracing.metal            # Metal compute shader
-│
-├── build/                          # Build artifacts (organized by module)
-├── vcpkg/                          # Dependency manager
-├── Makefile                        # Build system
-└── README.md
+├── include/                         # Header files (mirrors src structure)
+├── shaders/                        # Metal compute shaders
+├── scripts/                       # Build and packaging scripts
+├── assets/                        # Game assets and icons
+├── export/                        # Build outputs (executable, app bundle, DMG)
+├── build/                         # Build artifacts
+├── vcpkg/                         # Dependency manager
+├── Makefile                       # Build system
+├── sign_package.sh               # One-stop packaging script
+├── README.md                      # This file
+└── PACKAGING.md                   # Packaging and distribution guide
 ```
 
 ### Module Responsibilities
@@ -256,20 +186,20 @@ blackhole_simulation/
 
 **Problem**: `SDL2/SDL.h` file not found
 ```bash
-# Ensure SDL2 is installed via vcpkg
-./vcpkg/vcpkg install sdl2
+# Ensure dependencies are installed via vcpkg
+./vcpkg/vcpkg install
 ```
 
 **Problem**: Linker errors about missing frameworks
 ```bash
 # The Makefile should include all necessary frameworks
-# If issues persist, check that you're on macOS
+# If issues persist, check that you're on macOS and Xcode Command Line Tools are installed
 ```
 
 ### Performance Issues
 
 **Low FPS (<10 FPS)**:
-- Reduce window resolution (edit `WIDTH` and `HEIGHT` in `main.cpp`)
+- Reduce resolution using +/- keys
 - Increase `stepSize` in `BlackHole::trace()` (trade accuracy for speed)
 - Reduce `maxDist` parameter (limit ray tracing distance)
 
@@ -277,32 +207,35 @@ blackhole_simulation/
 
 ### Adjust Black Hole Mass
 
-Edit `main.cpp`:
+Edit `src/core/Application.cpp`:
 ```cpp
-BlackHole bh(1.0);  // Change mass (affects Schwarzschild radius)
-```
-
-### Change Camera Settings
-
-Edit `main.cpp`:
-```cpp
-Camera cam(Vector3(0, 3, -15), Vector3(0, 0, 0), 60.0);
-//         ^position           ^lookAt          ^FOV
+blackHole = new BlackHole(1.0);  // Change mass (affects Schwarzschild radius)
 ```
 
 ### Modify Accretion Disk
 
-Edit `BlackHole.cpp` in the `diskDensity()` function to change:
+Edit `src/physics/BlackHole.cpp` in the `diskDensity()` function to change:
 - Disk inner/outer radius
 - Thickness
 - Procedural patterns
 
-## Clean Build
+## Building & Packaging
 
+### Development Build
 ```bash
 make clean
 make
 ```
+
+### Release Package
+For creating distributable macOS app bundles and DMG files, see [PACKAGING.md](PACKAGING.md).
+
+Quick start:
+```bash
+./sign_package.sh
+```
+
+This will build, sign (if certificate available), and create a DMG file in the `export/` folder.
 
 ## License
 

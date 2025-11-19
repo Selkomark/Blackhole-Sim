@@ -23,6 +23,7 @@ FRAMEWORKS := -framework Cocoa -framework IOKit -framework CoreVideo \
 BUILD_DIR := build
 SRC_DIR := src
 SHADER_DIR := shaders
+EXPORT_DIR := export
 
 # Source files organized by module
 SOURCES := \
@@ -48,15 +49,19 @@ METAL_AIR := $(BUILD_DIR)/RayTracing.air
 METAL_LIB := $(BUILD_DIR)/default.metallib
 
 # Output executable
-TARGET := blackhole_sim
+TARGET := $(EXPORT_DIR)/blackhole_sim
 
 # Default target
-all: $(TARGET)
+all: $(EXPORT_DIR) $(TARGET)
 
 # Create build directory structure
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)/core $(BUILD_DIR)/camera $(BUILD_DIR)/ui \
 	          $(BUILD_DIR)/physics $(BUILD_DIR)/rendering $(BUILD_DIR)/utils
+
+# Create export directory
+$(EXPORT_DIR):
+	@mkdir -p $(EXPORT_DIR)
 
 # Compile Metal shaders
 $(METAL_AIR): $(METAL_SOURCE) | $(BUILD_DIR)
@@ -76,18 +81,37 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.mm | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $(OBJC_FLAGS) -c $< -o $@
 
 # Link executable
-$(TARGET): $(METAL_LIB) $(OBJECTS)
+$(TARGET): $(METAL_LIB) $(OBJECTS) | $(EXPORT_DIR)
 	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS) $(LIBS) $(RPATH) $(FRAMEWORKS)
 
 # Run the simulation
 run: $(TARGET)
 	./$(TARGET)
 
+# Create macOS app bundle
+app: $(TARGET)
+	@./scripts/create_app_bundle.sh
+
+# Sign the app bundle (requires MACOS_SIGNING_IDENTITY env var)
+sign: app
+	@./scripts/sign_app.sh
+
+# Create DMG for distribution
+dmg: app
+	@./scripts/create_dmg.sh
+
+# Full release build: build, create app, sign, and create DMG
+release: clean all sign dmg
+
+# One-stop sign and package script
+package: clean
+	@./sign_package.sh
+
 # Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET)
+	rm -rf $(BUILD_DIR) $(EXPORT_DIR)
 
 # Rebuild from scratch
 rebuild: clean all
 
-.PHONY: all run clean rebuild
+.PHONY: all run clean rebuild app sign dmg release package

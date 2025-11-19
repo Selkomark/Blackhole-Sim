@@ -1,4 +1,5 @@
 build/
+export/
 blackhole_sim
 vcpkg/
 vcpkg_installed/

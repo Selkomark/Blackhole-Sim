@@ -284,19 +284,5 @@ void HUD::renderCameraAxes(const Camera *camera, int windowWidth, int windowHeig
   renderText("F=Forward (Red)", centerX - 40, legendY + 20, {255, 0, 0, 255});
   renderText("R=Right (Green)", centerX - 40, legendY + 40, {0, 255, 0, 255});
   renderText("U=Up (Blue)", centerX - 40, legendY + 60, {0, 0, 255, 255});
-  
-  // Also print numeric values for debugging
-  char debugText[256];
-  snprintf(debugText, sizeof(debugText), "F: [%.2f, %.2f, %.2f]", 
-           camera->forward.x, camera->forward.y, camera->forward.z);
-  renderText(debugText, centerX - 80, legendY + 80, {200, 200, 200, 255});
-  
-  snprintf(debugText, sizeof(debugText), "R: [%.2f, %.2f, %.2f]", 
-           camera->right.x, camera->right.y, camera->right.z);
-  renderText(debugText, centerX - 80, legendY + 100, {200, 200, 200, 255});
-  
-  snprintf(debugText, sizeof(debugText), "U: [%.2f, %.2f, %.2f]", 
-           camera->up.x, camera->up.y, camera->up.z);
-  renderText(debugText, centerX - 80, legendY + 120, {200, 200, 200, 255});
 }
 

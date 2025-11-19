@@ -15,7 +15,7 @@ public:
   // Render the hints overlay
   void renderHints(bool showHints, CinematicMode mode, int fps, int windowWidth, int windowHeight, class ResolutionManager* resolutionManager);
   
-  // Render camera axis indicators (for debugging rotation)
+  // Render camera axis indicators
   void renderCameraAxes(const Camera *camera, int windowWidth, int windowHeight);
   
   // Toggle hints visibility
