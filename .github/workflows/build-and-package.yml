@@ -125,6 +125,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-
             ${{ runner.os }}-vcpkg-installed-
+        continue-on-error: true
       
       - name: Cache vcpkg downloads
         id: cache-vcpkg-downloads
@@ -142,27 +143,73 @@ jobs:
       
       - name: Install dependencies
         run: |
-          ./vcpkg/vcpkg install --triplet ${{ matrix.triplet }}
-          # Verify installation succeeded
-          if [ $? -ne 0 ]; then
+          echo "Installing vcpkg packages for triplet: ${{ matrix.triplet }}"
+          echo "Cache hit status: ${{ steps.cache-vcpkg-installed.outputs.cache-hit }}"
+          echo "Checking vcpkg installation directory before install:"
+          if [ -d "./vcpkg/installed" ]; then
+            ls -la "./vcpkg/installed/" || true
+            if [ -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+              echo "Triplet directory exists, checking contents:"
+              ls -la "./vcpkg/installed/${{ matrix.triplet }}/" || true
+            fi
+          else
+            echo "installed directory does not exist yet"
+          fi
+          
+          # Always run vcpkg install - it will skip already installed packages
+          # but will install missing ones even if cache was restored
+          echo "Running vcpkg install..."
+          if ! ./vcpkg/vcpkg install --triplet ${{ matrix.triplet }}; then
             echo "❌ Error: vcpkg install failed!"
+            echo "Checking vcpkg installed directory:"
+            ls -la "./vcpkg/installed/" || echo "installed directory does not exist"
             exit 1
           fi
+          
           echo "✅ vcpkg install completed successfully"
+          echo "Checking installed directory after install:"
+          if [ -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+            ls -la "./vcpkg/installed/${{ matrix.triplet }}/" || true
+            echo "Package count:"
+            find "./vcpkg/installed/${{ matrix.triplet }}" -name "*.pc" -o -name "*.cmake" | wc -l || true
+          else
+            echo "❌ ERROR: Triplet directory still does not exist after install!"
+            exit 1
+          fi
       
       - name: Verify vcpkg installation
         run: |
           echo "Verifying vcpkg installation for ${{ matrix.triplet }}..."
-          if [ ! -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+          
+          # Check if installed directory exists
+          if [ ! -d "./vcpkg/installed" ]; then
             echo "❌ Error: vcpkg installed directory not found!"
+            echo "Contents of vcpkg directory:"
+            ls -la "./vcpkg/" || true
             exit 1
           fi
+          
+          if [ ! -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+            echo "❌ Error: vcpkg installed directory for triplet ${{ matrix.triplet }} not found!"
+            echo "Available triplets:"
+            ls -la "./vcpkg/installed/" || true
+            exit 1
+          fi
+          
+          echo "✅ Installed directory exists: ./vcpkg/installed/${{ matrix.triplet }}"
+          
+          # Check for SDL2 headers
           if [ ! -f "./vcpkg/installed/${{ matrix.triplet }}/include/SDL2/SDL.h" ]; then
             echo "❌ Error: SDL2 headers not found!"
             echo "Checking include directory contents:"
             ls -la "./vcpkg/installed/${{ matrix.triplet }}/include/" || true
+            if [ -d "./vcpkg/installed/${{ matrix.triplet }}/include" ]; then
+              echo "Subdirectories in include:"
+              find "./vcpkg/installed/${{ matrix.triplet }}/include" -maxdepth 2 -type d | head -20
+            fi
             exit 1
           fi
+          
           echo "✅ SDL2 headers found at: ./vcpkg/installed/${{ matrix.triplet }}/include/SDL2/SDL.h"
       
       - name: Update Makefile for architecture
