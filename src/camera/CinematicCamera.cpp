@@ -45,29 +45,45 @@ void CinematicCamera::updateManualMode(double deltaTime, const uint8_t *keyState
   Vector3 currentPos = cam.position;
   Vector3 movement(0, 0, 0);
   
-  double moveSpeed = 2.0 * deltaTime; // Reduced from 5.0 to 2.0 for smoother movement
+  // Base movement speed (units per second)
+  const double baseMoveSpeed = 2.0;
   
-  // Controls:
-  // W: Move up
-  // S: Move down
-  // D: Zoom in / Move forward
-  // A: Zoom back / Move backward
+  // Easing factor for smooth acceleration/deceleration (0.0 = instant, 1.0 = very slow)
+  // Higher values = smoother but slower response
+  const double moveEasingFactor = 8.0; // Smooth acceleration/deceleration
+  
+  // Calculate target movement direction and speed for each axis separately
+  // This allows independent easing for each direction
+  static double currentSpeedForward = 0.0;
+  static double currentSpeedUp = 0.0;
+  
+  double targetSpeedForward = 0.0;
+  double targetSpeedUp = 0.0;
   
   // Forward/backward movement (zoom)
   if (keyStates[SDL_SCANCODE_D]) {
-    movement += cam.forward * moveSpeed; // Zoom in / Move forward
+    targetSpeedForward = baseMoveSpeed; // Zoom in / Move forward (positive)
   }
   if (keyStates[SDL_SCANCODE_A]) {
-    movement -= cam.forward * moveSpeed; // Zoom back / Move backward
+    targetSpeedForward = -baseMoveSpeed; // Zoom back / Move backward (negative)
   }
   
   // Up/down movement
   if (keyStates[SDL_SCANCODE_W]) {
-    movement += cam.up * moveSpeed; // Move up
+    targetSpeedUp = baseMoveSpeed; // Move up (positive)
   }
   if (keyStates[SDL_SCANCODE_S]) {
-    movement -= cam.up * moveSpeed; // Move down
+    targetSpeedUp = -baseMoveSpeed; // Move down (negative)
   }
+  
+  // Apply exponential smoothing to each axis independently
+  double moveSmoothing = 1.0 - std::exp(-moveEasingFactor * deltaTime);
+  currentSpeedForward += (targetSpeedForward - currentSpeedForward) * moveSmoothing;
+  currentSpeedUp += (targetSpeedUp - currentSpeedUp) * moveSmoothing;
+  
+  // Calculate movement vector from eased speeds
+  movement = cam.forward * currentSpeedForward * deltaTime;
+  movement += cam.up * currentSpeedUp * deltaTime;
   
   // Apply movement - camera stays where you move it
   // Even if movement is zero, we still update to ensure rendering continues
@@ -150,7 +166,58 @@ Vector3 rotateAroundAxis(const Vector3& vec, const Vector3& axis, double angle) 
 void CinematicCamera::updateCameraLookDirection(double deltaTime) {
   // Get keyboard state for rotation (applied incrementally each frame)
   const Uint8 *keyStates = SDL_GetKeyboardState(nullptr);
-  double rotSpeed = rotationSpeed * deltaTime; // Use actual deltaTime for smooth rotation
+  
+  // Easing factor for smooth rotation acceleration/deceleration
+  const double rotationEasingFactor = 10.0; // Smooth acceleration/deceleration
+  
+  // Base rotation speed (radians per second)
+  const double baseRotationSpeed = rotationSpeed;
+  
+  // Calculate target rotation speed based on key presses
+  // We'll track rotation in each axis separately for smoother control
+  double targetRotSpeedUp = 0.0;
+  double targetRotSpeedRight = 0.0;
+  double targetRotSpeedForward = 0.0;
+  
+  // 1. Rotate around Up (blue) axis - L/J keys
+  if (keyStates[SDL_SCANCODE_L]) {
+    targetRotSpeedUp -= baseRotationSpeed; // Negative rotation
+  }
+  if (keyStates[SDL_SCANCODE_J]) {
+    targetRotSpeedUp += baseRotationSpeed; // Positive rotation
+  }
+  
+  // 2. Rotate around Right (green) axis - I/K keys
+  if (keyStates[SDL_SCANCODE_I]) {
+    targetRotSpeedRight += baseRotationSpeed;
+  }
+  if (keyStates[SDL_SCANCODE_K]) {
+    targetRotSpeedRight -= baseRotationSpeed;
+  }
+  
+  // 3. Rotate around Forward (red) axis - O/U keys
+  if (keyStates[SDL_SCANCODE_O]) {
+    targetRotSpeedForward -= baseRotationSpeed; // Swapped
+  }
+  if (keyStates[SDL_SCANCODE_U]) {
+    targetRotSpeedForward += baseRotationSpeed; // Swapped
+  }
+  
+  // Apply exponential smoothing to rotation speeds
+  // Store current rotation speeds as static variables for persistence
+  static double currentRotSpeedUp = 0.0;
+  static double currentRotSpeedRight = 0.0;
+  static double currentRotSpeedForward = 0.0;
+  
+  double rotSmoothing = 1.0 - std::exp(-rotationEasingFactor * deltaTime);
+  currentRotSpeedUp += (targetRotSpeedUp - currentRotSpeedUp) * rotSmoothing;
+  currentRotSpeedRight += (targetRotSpeedRight - currentRotSpeedRight) * rotSmoothing;
+  currentRotSpeedForward += (targetRotSpeedForward - currentRotSpeedForward) * rotSmoothing;
+  
+  // Convert to rotation angle for this frame
+  double rotSpeedUp = currentRotSpeedUp * deltaTime;
+  double rotSpeedRight = currentRotSpeedRight * deltaTime;
+  double rotSpeedForward = currentRotSpeedForward * deltaTime;
   
   Vector3 currentForward, currentRight, currentUp;
   
@@ -202,65 +269,72 @@ void CinematicCamera::updateCameraLookDirection(double deltaTime) {
     }
   }
   
-  // Apply rotations incrementally ONLY when keys are pressed
-  // Rotations are applied each frame, so they stop when keys are released
+  // Apply rotations incrementally with eased speeds
+  // Rotations are applied each frame with smooth acceleration/deceleration
   Vector3 rotatedForward = currentForward;
   Vector3 rotatedRight = currentRight;
   Vector3 rotatedUp = currentUp;
   
-  // 1. Rotate around Up (blue) axis - L/J keys (swapped)
-  // Rotates Forward and Right around Up, Up stays fixed
-  if (keyStates[SDL_SCANCODE_L]) {
-    rotatedForward = rotateAroundAxis(rotatedForward, rotatedUp, -rotSpeed); // Swapped
-    rotatedRight = rotateAroundAxis(rotatedRight, rotatedUp, -rotSpeed);
-  }
-  if (keyStates[SDL_SCANCODE_J]) {
-    rotatedForward = rotateAroundAxis(rotatedForward, rotatedUp, rotSpeed); // Swapped
-    rotatedRight = rotateAroundAxis(rotatedRight, rotatedUp, rotSpeed);
+  // Apply rotations only if there's actual rotation speed (smoothly decelerates to zero)
+  // 1. Rotate around Up (blue) axis - L/J keys
+  if (std::abs(rotSpeedUp) > 0.0001) {
+    rotatedForward = rotateAroundAxis(rotatedForward, rotatedUp, rotSpeedUp);
+    rotatedRight = rotateAroundAxis(rotatedRight, rotatedUp, rotSpeedUp);
   }
   
   // 2. Rotate around Right (green) axis - I/K keys
-  // Rotates Forward and Up around Right, Right stays fixed
-  if (keyStates[SDL_SCANCODE_I]) {
-    rotatedForward = rotateAroundAxis(rotatedForward, rotatedRight, rotSpeed);
-    rotatedUp = rotateAroundAxis(rotatedUp, rotatedRight, rotSpeed);
-  }
-  if (keyStates[SDL_SCANCODE_K]) {
-    rotatedForward = rotateAroundAxis(rotatedForward, rotatedRight, -rotSpeed);
-    rotatedUp = rotateAroundAxis(rotatedUp, rotatedRight, -rotSpeed);
+  if (std::abs(rotSpeedRight) > 0.0001) {
+    rotatedForward = rotateAroundAxis(rotatedForward, rotatedRight, rotSpeedRight);
+    rotatedUp = rotateAroundAxis(rotatedUp, rotatedRight, rotSpeedRight);
   }
   
-  // 3. Rotate around Forward (red) axis - O/U keys (swapped)
-  // Rotates Right and Up around Forward, Forward stays fixed
-  if (keyStates[SDL_SCANCODE_O]) {
-    rotatedRight = rotateAroundAxis(rotatedRight, rotatedForward, -rotSpeed); // Swapped
-    rotatedUp = rotateAroundAxis(rotatedUp, rotatedForward, -rotSpeed);
-  }
-  if (keyStates[SDL_SCANCODE_U]) {
-    rotatedRight = rotateAroundAxis(rotatedRight, rotatedForward, rotSpeed); // Swapped
-    rotatedUp = rotateAroundAxis(rotatedUp, rotatedForward, rotSpeed);
+  // 3. Rotate around Forward (red) axis - O/U keys
+  if (std::abs(rotSpeedForward) > 0.0001) {
+    rotatedRight = rotateAroundAxis(rotatedRight, rotatedForward, rotSpeedForward);
+    rotatedUp = rotateAroundAxis(rotatedUp, rotatedForward, rotSpeedForward);
   }
   
-  // Normalize and ensure orthogonality
+  // Normalize all vectors
   rotatedForward = rotatedForward.normalized();
   rotatedRight = rotatedRight.normalized();
   rotatedUp = rotatedUp.normalized();
   
-  // Reconstruct orthogonal basis from forward
-  rotatedRight = rotatedForward.cross(rotatedUp).normalized();
-  if (rotatedRight.length() < 0.001) {
-    // Vectors are parallel, use fallback
-    rotatedRight = rotatedForward.cross(Vector3(0, 1, 0)).normalized();
-    if (rotatedRight.length() < 0.001) {
-      rotatedRight = rotatedForward.cross(Vector3(1, 0, 0)).normalized();
+  // Use Gram-Schmidt orthogonalization to ensure orthogonality while preserving rotations
+  // This maintains the rotated state while fixing any numerical drift
+  
+  // Keep forward as-is (it's the primary direction)
+  Vector3 newForward = rotatedForward;
+  
+  // Make right orthogonal to forward
+  Vector3 newRight = rotatedRight - newForward * newForward.dot(rotatedRight);
+  newRight = newRight.normalized();
+  if (newRight.length() < 0.001) {
+    // Fallback: construct right from forward and world up
+    newRight = newForward.cross(Vector3(0, 1, 0)).normalized();
+    if (newRight.length() < 0.001) {
+      newRight = newForward.cross(Vector3(1, 0, 0)).normalized();
     }
   }
-  rotatedUp = rotatedRight.cross(rotatedForward).normalized();
+  
+  // Make up orthogonal to both forward and right
+  Vector3 newUp = rotatedUp - newForward * newForward.dot(rotatedUp) - newRight * newRight.dot(rotatedUp);
+  newUp = newUp.normalized();
+  if (newUp.length() < 0.001) {
+    // Fallback: construct up from forward and right
+    newUp = newRight.cross(newForward).normalized();
+  }
+  
+  // Ensure right-handed coordinate system
+  Vector3 crossCheck = newRight.cross(newForward);
+  if (crossCheck.dot(newUp) < 0.0) {
+    // Flip up to maintain right-handedness
+    newUp = newUp * -1.0;
+  }
   
   // Update camera basis directly (don't use lookAt as it recalculates)
-  cam.forward = rotatedForward;
-  cam.right = rotatedRight;
-  cam.up = rotatedUp;
+  cam.forward = newForward;
+  cam.right = newRight;
+  cam.up = newUp;
 }
 
 void CinematicCamera::reset() {

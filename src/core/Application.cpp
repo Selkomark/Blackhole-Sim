@@ -8,7 +8,8 @@ Application::Application()
       gpuRenderer(nullptr), gpuTexture(nullptr),
       blackHole(nullptr), camera(nullptr), cinematicCamera(nullptr), hud(nullptr),
       resolutionManager(nullptr),
-      windowWidth(1920), windowHeight(1080), isFullscreen(false), isResizing(false),
+      windowWidth(1920), windowHeight(1080), renderWidth(1920), renderHeight(1080),
+      isFullscreen(false), isResizing(false),
       running(false), currentFPS(0) {}
 
 Application::~Application() {
@@ -26,10 +27,27 @@ bool Application::initialize() {
   resolutionManager = new ResolutionManager();
   resolutionManager->setResolution(5); // 1080p FHD
   
-  // Get selected resolution
+  // Get selected resolution for rendering
   const Resolution& res = resolutionManager->getCurrent();
-  windowWidth = res.width;
-  windowHeight = res.height;
+  if (res.width == 0 && res.height == 0) {
+    // Native resolution - use desktop resolution
+    SDL_DisplayMode displayMode;
+    if (SDL_GetDesktopDisplayMode(0, &displayMode) == 0) {
+      renderWidth = displayMode.w;
+      renderHeight = displayMode.h;
+    } else {
+      renderWidth = 1920;
+      renderHeight = 1080;
+    }
+  } else {
+    renderWidth = res.width;
+    renderHeight = res.height;
+  }
+  
+  // Window size - use a reasonable default that matches common screen sizes
+  // This will be the display size, rendering resolution is separate
+  windowWidth = 1920;
+  windowHeight = 1080;
 
   // Initialize SDL_ttf
   if (TTF_Init() < 0) {
@@ -59,6 +77,22 @@ bool Application::initialize() {
     std::cerr << "Renderer could not be created! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
   }
+  
+  // Set default render draw color to black
+  SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255);
+  
+  // On macOS with high DPI, get the renderer output size
+  // which accounts for the scale factor (may be 2x on Retina displays)
+  int rendererOutputW, rendererOutputH;
+  SDL_GetRendererOutputSize(sdlRenderer, &rendererOutputW, &rendererOutputH);
+  
+  // Don't set logical size - use physical window coordinates directly
+  // Reset any scaling to 1:1
+  SDL_RenderSetScale(sdlRenderer, 1.0f, 1.0f);
+  
+  // Set viewport to full renderer output (not window size, which might be in points)
+  SDL_Rect fullViewport = {0, 0, rendererOutputW, rendererOutputH};
+  SDL_RenderSetViewport(sdlRenderer, &fullViewport);
 
   // Load font with larger size for better readability
   font = TTF_OpenFont("/System/Library/Fonts/Helvetica.ttc", 24);
@@ -66,8 +100,8 @@ bool Application::initialize() {
     std::cerr << "Failed to load font! TTF_Error: " << TTF_GetError() << std::endl;
   }
 
-  // Initialize GPU renderer (Metal) with actual window size
-  gpuRenderer = metal_rt_renderer_create(windowWidth, windowHeight);
+  // Initialize GPU renderer (Metal) with rendering resolution
+  gpuRenderer = metal_rt_renderer_create(renderWidth, renderHeight);
   if (!gpuRenderer) {
     std::cerr << "ERROR: GPU renderer failed to initialize!\n";
     std::cerr << "Metal GPU acceleration is required for this simulation.\n";
@@ -75,7 +109,7 @@ bool Application::initialize() {
   }
 
   gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                  SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
+                                  SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
   
   // Startup messages removed - use HUD instead
 
@@ -131,15 +165,25 @@ void Application::run() {
     update(deltaTime);
     render(elapsedTime);
 
-    // FPS calculation
-    frameCount++;
-    fpsUpdateTime += deltaTime;
-    if (fpsUpdateTime >= 0.5) {
-      currentFPS = static_cast<int>(frameCount / fpsUpdateTime);
-      frameCount = 0;
-      fpsUpdateTime = 0.0;
-      updateWindowTitle();
-    }
+        // FPS calculation - measure actual rendering performance
+        // Use a timer that measures the actual render time, not just frame count
+        static auto lastFPSTime = std::chrono::high_resolution_clock::now();
+        auto currentFPSTime = std::chrono::high_resolution_clock::now();
+        double fpsDeltaTime = std::chrono::duration<double>(currentFPSTime - lastFPSTime).count();
+        
+        frameCount++;
+        fpsUpdateTime += deltaTime;
+        
+        if (fpsUpdateTime >= 0.5) {
+          // Calculate FPS based on actual time elapsed
+          if (fpsDeltaTime > 0.0) {
+            currentFPS = static_cast<int>(frameCount / fpsUpdateTime);
+          }
+          frameCount = 0;
+          fpsUpdateTime = 0.0;
+          lastFPSTime = currentFPSTime;
+          updateWindowTitle();
+        }
     
     // No delay - keep rendering at full speed
     // The loop must continue running continuously
@@ -228,9 +272,9 @@ void Application::render(double elapsedTime) {
   if (pixels && gpuTexture) {
     // Always update texture - force update even if pixels appear unchanged
     // This ensures animation continues even when camera is stationary
-    // Explicitly update the entire texture region
-    SDL_Rect updateRect = {0, 0, windowWidth, windowHeight};
-    int result = SDL_UpdateTexture(gpuTexture, &updateRect, pixels, windowWidth * 4);
+    // Explicitly update the entire texture region (at rendering resolution)
+    SDL_Rect updateRect = {0, 0, renderWidth, renderHeight};
+    int result = SDL_UpdateTexture(gpuTexture, &updateRect, pixels, renderWidth * 4);
     if (result != 0) {
       static int updateErrorCount = 0;
       if (updateErrorCount++ < 3) {
@@ -238,9 +282,45 @@ void Application::render(double elapsedTime) {
       }
     }
     
-    // Clear renderer before copying to ensure fresh frame
+    // Clear renderer with black before copying to ensure fresh frame
+    SDL_SetRenderDrawColor(sdlRenderer, 0, 0, 0, 255); // Black background
     SDL_RenderClear(sdlRenderer);
-    SDL_RenderCopy(sdlRenderer, gpuTexture, nullptr, nullptr);
+    
+    // Reset all renderer state to defaults
+    SDL_RenderSetViewport(sdlRenderer, nullptr); // Reset viewport to full renderer output
+    SDL_RenderSetScale(sdlRenderer, 1.0f, 1.0f); // Ensure 1:1 scale
+    
+    // Get current renderer output size (accounts for high DPI scaling)
+    int currentOutputW, currentOutputH;
+    SDL_GetRendererOutputSize(sdlRenderer, &currentOutputW, &currentOutputH);
+    
+    // Calculate aspect ratios to maintain proper aspect ratio (letterbox/pillarbox)
+    float renderAspect = static_cast<float>(renderWidth) / static_cast<float>(renderHeight);
+    float outputAspect = static_cast<float>(currentOutputW) / static_cast<float>(currentOutputH);
+    
+    SDL_Rect srcRect = {0, 0, renderWidth, renderHeight}; // Full source texture
+    SDL_Rect dstRect;
+    
+    if (renderAspect > outputAspect) {
+      // Source is wider - letterbox (black bars top/bottom)
+      int scaledHeight = static_cast<int>(currentOutputW / renderAspect);
+      int offsetY = (currentOutputH - scaledHeight) / 2;
+      dstRect = {0, offsetY, currentOutputW, scaledHeight};
+    } else {
+      // Source is taller - pillarbox (black bars left/right)
+      int scaledWidth = static_cast<int>(currentOutputH * renderAspect);
+      int offsetX = (currentOutputW - scaledWidth) / 2;
+      dstRect = {offsetX, 0, scaledWidth, currentOutputH};
+    }
+    
+    // Copy texture maintaining aspect ratio
+    int copyResult = SDL_RenderCopy(sdlRenderer, gpuTexture, &srcRect, &dstRect);
+    if (copyResult != 0) {
+      static int errorCount = 0;
+      if (errorCount++ < 3) {
+        std::cerr << "SDL_RenderCopy error: " << SDL_GetError() << std::endl;
+      }
+    }
     
     // Force renderer to flush commands
     SDL_RenderFlush(sdlRenderer);
@@ -253,6 +333,10 @@ void Application::render(double elapsedTime) {
     }
   }
 
+  // Reset viewport to full window for HUD rendering
+  SDL_RenderSetViewport(sdlRenderer, nullptr); // Use full renderer output
+  SDL_RenderSetScale(sdlRenderer, 1.0f, 1.0f); // Ensure 1:1 scale for HUD
+  
   // Render HUD
   hud->renderHints(hud->areHintsVisible(), cinematicCamera->getMode(), currentFPS, windowWidth, windowHeight, resolutionManager);
 
@@ -274,23 +358,57 @@ void Application::prepareCameraData(CameraData &data) {
   data.position[2] = camera->position.z;
   
   // Ensure forward vector is valid (non-zero)
+  // Don't call lookAt here as it resets user rotations - let CinematicCamera handle orientation
   float forwardLen = std::sqrt(camera->forward.x * camera->forward.x + 
                                 camera->forward.y * camera->forward.y + 
                                 camera->forward.z * camera->forward.z);
   if (forwardLen < 0.001f) {
-    // Fallback: look at black hole center
-    camera->lookAt(Vector3(0, 0, 0));
+    // Only set a default forward if completely invalid - don't reset user rotations
+    // This should rarely happen as CinematicCamera maintains valid vectors
+    data.forward[0] = 0.0f;
+    data.forward[1] = 0.0f;
+    data.forward[2] = 1.0f; // Default forward
+    data.right[0] = 1.0f;
+    data.right[1] = 0.0f;
+    data.right[2] = 0.0f;
+    data.up[0] = 0.0f;
+    data.up[1] = 1.0f;
+    data.up[2] = 0.0f;
+  } else {
+    // Normalize and use camera vectors
+    float invLen = 1.0f / forwardLen;
+    data.forward[0] = camera->forward.x * invLen;
+    data.forward[1] = camera->forward.y * invLen;
+    data.forward[2] = camera->forward.z * invLen;
+    
+    // Normalize right and up vectors too
+    float rightLen = std::sqrt(camera->right.x * camera->right.x + 
+                               camera->right.y * camera->right.y + 
+                               camera->right.z * camera->right.z);
+    float upLen = std::sqrt(camera->up.x * camera->up.x + 
+                            camera->up.y * camera->up.y + 
+                            camera->up.z * camera->up.z);
+    if (rightLen > 0.001f) {
+      float invRightLen = 1.0f / rightLen;
+      data.right[0] = camera->right.x * invRightLen;
+      data.right[1] = camera->right.y * invRightLen;
+      data.right[2] = camera->right.z * invRightLen;
+    } else {
+      data.right[0] = 1.0f;
+      data.right[1] = 0.0f;
+      data.right[2] = 0.0f;
+    }
+    if (upLen > 0.001f) {
+      float invUpLen = 1.0f / upLen;
+      data.up[0] = camera->up.x * invUpLen;
+      data.up[1] = camera->up.y * invUpLen;
+      data.up[2] = camera->up.z * invUpLen;
+    } else {
+      data.up[0] = 0.0f;
+      data.up[1] = 1.0f;
+      data.up[2] = 0.0f;
+    }
   }
-  
-  data.forward[0] = camera->forward.x;
-  data.forward[1] = camera->forward.y;
-  data.forward[2] = camera->forward.z;
-  data.right[0] = camera->right.x;
-  data.right[1] = camera->right.y;
-  data.right[2] = camera->right.z;
-  data.up[0] = camera->up.x;
-  data.up[1] = camera->up.y;
-  data.up[2] = camera->up.z;
   data.fov = camera->fov;
 }
 
@@ -301,9 +419,10 @@ void Application::toggleFullscreen() {
   // Get new window size after fullscreen toggle
   SDL_GetWindowSize(window, &windowWidth, &windowHeight);
   
-  // Update resolution manager to match actual window size
+  // In fullscreen, window size matches native display resolution
+  // Rendering resolution is still controlled by resolution manager
+  // This allows changing quality without changing window size
   if (isFullscreen) {
-    // In fullscreen, use native resolution
     resolutionManager->setResolution(resolutionManager->findClosestPreset(windowWidth, windowHeight));
   }
   
@@ -325,28 +444,26 @@ void Application::handleWindowResize(int width, int height) {
 }
 
 void Application::recreateRenderTargets() {
-  // Ensure we have the actual window size (accounting for DPI scaling)
+  // Update window size (for display scaling)
   int actualWidth, actualHeight;
   SDL_GetWindowSize(window, &actualWidth, &actualHeight);
   windowWidth = actualWidth;
   windowHeight = actualHeight;
   
-  // Resize Metal renderer first (this updates internal resolution)
-  metal_rt_renderer_resize(gpuRenderer, windowWidth, windowHeight);
+  // Resize Metal renderer to rendering resolution (not window size)
+  metal_rt_renderer_resize(gpuRenderer, renderWidth, renderHeight);
   
-  // Recreate SDL texture with new dimensions
+  // Recreate SDL texture with rendering resolution
   if (gpuTexture) {
     SDL_DestroyTexture(gpuTexture);
     gpuTexture = nullptr;
   }
   
   gpuTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                  SDL_TEXTUREACCESS_STREAMING, windowWidth, windowHeight);
+                                  SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
   
   if (!gpuTexture) {
-    std::cerr << "Failed to recreate texture at " << windowWidth << "×" << windowHeight << std::endl;
-  } else {
-    // Render target recreation logging removed
+    std::cerr << "Failed to recreate texture at " << renderWidth << "×" << renderHeight << std::endl;
   }
   
   updateWindowTitle();
@@ -369,50 +486,34 @@ void Application::changeResolution(bool increase) {
   
   const Resolution& res = resolutionManager->getCurrent();
   
-  int newWidth, newHeight;
+  // Calculate new rendering resolution (window size stays the same)
+  int newRenderWidth, newRenderHeight;
   if (res.width == 0 && res.height == 0) {
-    // Native resolution
+    // Native resolution - use desktop resolution
     SDL_DisplayMode displayMode;
     if (SDL_GetDesktopDisplayMode(0, &displayMode) == 0) {
-      newWidth = displayMode.w;
-      newHeight = displayMode.h;
+      newRenderWidth = displayMode.w;
+      newRenderHeight = displayMode.h;
     } else {
-      newWidth = 1920;
-      newHeight = 1080;
+      newRenderWidth = 1920;
+      newRenderHeight = 1080;
     }
   } else {
-    newWidth = res.width;
-    newHeight = res.height;
+    newRenderWidth = res.width;
+    newRenderHeight = res.height;
   }
   
-  // Skip if same resolution
-  if (newWidth == windowWidth && newHeight == windowHeight) {
+  // Skip if same rendering resolution
+  if (newRenderWidth == renderWidth && newRenderHeight == renderHeight) {
     return;
   }
   
-  // Set flag to prevent recursive resize events
-  isResizing = true;
+  // Update rendering resolution (window size stays unchanged)
+  renderWidth = newRenderWidth;
+  renderHeight = newRenderHeight;
   
-  // Resize window first
-  SDL_SetWindowSize(window, newWidth, newHeight);
-  
-  // Process events to ensure window resize completes
-  SDL_PumpEvents();
-  SDL_FlushEvents(SDL_WINDOWEVENT, SDL_WINDOWEVENT);
-  
-  // Get actual window size (may differ due to high DPI scaling)
-  int actualWidth, actualHeight;
-  SDL_GetWindowSize(window, &actualWidth, &actualHeight);
-  
-  // Update to actual size
-  windowWidth = actualWidth;
-  windowHeight = actualHeight;
-  
-  // Force immediate resize of render targets
+  // Recreate render targets with new resolution
   recreateRenderTargets();
-  
-  // Clear flag
-  isResizing = false;
 }
 
 void Application::cleanup() {

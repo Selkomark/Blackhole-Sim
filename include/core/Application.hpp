@@ -43,6 +43,8 @@ private:
   // Window properties (dynamic)
   int windowWidth;
   int windowHeight;
+  int renderWidth;   // Internal rendering resolution
+  int renderHeight;  // Internal rendering resolution
   bool isFullscreen;
   bool isResizing; // Flag to prevent recursive resize events
   
