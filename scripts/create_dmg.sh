@@ -4,7 +4,7 @@
 set -e
 
 EXPORT_DIR="export"
-APP_NAME="BlackHoleSim"
+APP_NAME="Blackhole Simulation"
 APP_BUNDLE="${EXPORT_DIR}/${APP_NAME}.app"
 DMG_NAME="${APP_NAME}"
 VERSION="1.0"

@@ -4,8 +4,9 @@
 set -e
 
 EXPORT_DIR="export"
-APP_NAME="BlackHoleSim"
+APP_NAME="Blackhole Simulation"
 APP_BUNDLE="${EXPORT_DIR}/${APP_NAME}.app"
+EXECUTABLE_NAME="blackhole_sim"
 
 if [ ! -d "${APP_BUNDLE}" ]; then
     echo "❌ Error: App bundle not found. Run 'make app' first."
@@ -161,7 +162,7 @@ echo "✍️  Signing application..."
 if ! codesign --force --sign "${IDENTITY}" \
     --options runtime \
     --entitlements scripts/entitlements.plist \
-    "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}" 2>&1; then
+    "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" 2>&1; then
     echo ""
     echo "❌ Signing executable failed!"
     exit 1

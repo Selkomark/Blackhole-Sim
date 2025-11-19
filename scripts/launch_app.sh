@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Helper script to launch BlackHoleSim.app
+# Helper script to launch Blackhole Simulation.app
 # This bypasses Gatekeeper for unnotarized Developer ID apps
 
-APP_BUNDLE="export/BlackHoleSim.app"
+APP_BUNDLE="export/Blackhole Simulation.app"
+EXECUTABLE_NAME="blackhole_sim"
 
 if [ ! -d "${APP_BUNDLE}" ]; then
     echo "❌ Error: App bundle not found at ${APP_BUNDLE}"
@@ -11,13 +12,13 @@ if [ ! -d "${APP_BUNDLE}" ]; then
     exit 1
 fi
 
-echo "🚀 Launching BlackHoleSim..."
+echo "🚀 Launching Blackhole Simulation..."
 echo ""
 
 # Method 1: Direct execution (bypasses Gatekeeper)
-if [ -f "${APP_BUNDLE}/Contents/MacOS/BlackHoleSim" ]; then
+if [ -f "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" ]; then
     echo "✅ Launching app directly..."
-    "${APP_BUNDLE}/Contents/MacOS/BlackHoleSim" &
+    "${APP_BUNDLE}/Contents/MacOS/${EXECUTABLE_NAME}" &
     echo "   App launched! Check your screen for the window."
     exit 0
 else

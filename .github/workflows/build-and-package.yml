@@ -94,11 +94,16 @@ jobs:
           make app
       
       - name: Import signing certificate
-        if: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
+          # Check if secrets are configured
+          if [ -z "$MACOS_CERTIFICATE" ] || [ -z "$MACOS_CERTIFICATE_PASSWORD" ]; then
+            echo "⚠️  Signing secrets not configured, skipping code signing"
+            exit 0
+          fi
+          
           # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
@@ -156,23 +161,23 @@ jobs:
       - name: Rename DMG with architecture
         run: |
           cd export
-          if [ -f "BlackHoleSim-1.0.dmg" ]; then
-            mv "BlackHoleSim-1.0.dmg" "BlackHoleSim-1.0-${{ matrix.arch }}.dmg"
+          if [ -f "Blackhole Simulation-1.0.dmg" ]; then
+            mv "Blackhole Simulation-1.0.dmg" "Blackhole Simulation-1.0-${{ matrix.arch }}.dmg"
           fi
       
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BlackHoleSim-${{ matrix.arch }}-dmg
-          path: export/BlackHoleSim-1.0-${{ matrix.arch }}.dmg
+          name: BlackholeSimulation-${{ matrix.arch }}-dmg
+          path: export/Blackhole Simulation-1.0-${{ matrix.arch }}.dmg
           retention-days: 30
           if-no-files-found: error
       
       - name: Upload app bundle artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BlackHoleSim-${{ matrix.arch }}-app
-          path: export/BlackHoleSim.app
+          name: BlackholeSimulation-${{ matrix.arch }}-app
+          path: export/Blackhole Simulation.app
           retention-days: 30
           if-no-files-found: error
       
@@ -191,10 +196,10 @@ jobs:
           echo "- Architecture: ${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
           echo "- Triplet: ${{ matrix.triplet }}" >> $GITHUB_STEP_SUMMARY
           echo "- Runner: ${{ matrix.runner }}" >> $GITHUB_STEP_SUMMARY
-          if [ -n "${{ secrets.MACOS_CERTIFICATE }}" ]; then
+          if [ "${SIGNING_ENABLED:-false}" = "true" ]; then
             echo "- ✅ Code signed: Yes" >> $GITHUB_STEP_SUMMARY
           else
             echo "- ⚠️ Code signed: No (secrets not configured)" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "- DMG: BlackHoleSim-1.0-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
+          echo "- DMG: Blackhole Simulation-1.0-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
 

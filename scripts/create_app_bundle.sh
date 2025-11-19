@@ -4,8 +4,9 @@
 set -e
 
 EXPORT_DIR="export"
-APP_NAME="BlackHoleSim"
+APP_NAME="Blackhole Simulation"
 APP_BUNDLE="${EXPORT_DIR}/${APP_NAME}.app"
+EXECUTABLE_NAME="blackhole_sim"
 CONTENTS_DIR="${APP_BUNDLE}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
@@ -21,8 +22,8 @@ mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
 
 # Copy executable and set execute permissions
-cp "${EXPORT_DIR}/blackhole_sim" "${MACOS_DIR}/${APP_NAME}"
-chmod +x "${MACOS_DIR}/${APP_NAME}"
+cp "${EXPORT_DIR}/blackhole_sim" "${MACOS_DIR}/${EXECUTABLE_NAME}"
+chmod +x "${MACOS_DIR}/${EXECUTABLE_NAME}"
 
 # Note: Libraries are statically linked, so no need to copy .dylib files
 # If you need dynamic libraries in the future, uncomment the Frameworks section below
@@ -47,13 +48,13 @@ cat > "${CONTENTS_DIR}/Info.plist" << EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>${APP_NAME}</string>
+    <string>${EXECUTABLE_NAME}</string>
     <key>CFBundleIdentifier</key>
     <string>com.blackhole.simulation</string>
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>Black Hole Simulation</string>
+    <string>Blackhole Simulation</string>
     <key>CFBundleVersion</key>
     <string>1.0</string>
     <key>CFBundleShortVersionString</key>
