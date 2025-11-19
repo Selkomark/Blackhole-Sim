@@ -5,7 +5,7 @@
 CinematicCamera::CinematicCamera(Camera &camera, const Vector3 &initialPosition)
     : cam(camera), initialPos(initialPosition), mode(CinematicMode::Manual),
       orbitAngle(0.0), orbitRadius(15.0), cinematicTime(0.0),
-      rotationSpeed(1.0) {} // Start in Manual mode by default
+      rotationSpeed(0.3) {} // Start in Manual mode by default - slower rotation
 
 void CinematicCamera::update(double deltaTime, const uint8_t *keyStates) {
   // Always advance time, even if deltaTime is small
@@ -45,12 +45,12 @@ void CinematicCamera::updateManualMode(double deltaTime, const uint8_t *keyState
   Vector3 currentPos = cam.position;
   Vector3 movement(0, 0, 0);
   
-  // Base movement speed (units per second)
-  const double baseMoveSpeed = 2.0;
+  // Base movement speed (units per second) - reduced for slower, smoother movement
+  const double baseMoveSpeed = 0.8;
   
   // Easing factor for smooth acceleration/deceleration (0.0 = instant, 1.0 = very slow)
   // Higher values = smoother but slower response
-  const double moveEasingFactor = 8.0; // Smooth acceleration/deceleration
+  const double moveEasingFactor = 12.0; // Increased for smoother, slower response
   
   // Calculate target movement direction and speed for each axis separately
   // This allows independent easing for each direction
@@ -168,9 +168,9 @@ void CinematicCamera::updateCameraLookDirection(double deltaTime) {
   const Uint8 *keyStates = SDL_GetKeyboardState(nullptr);
   
   // Easing factor for smooth rotation acceleration/deceleration
-  const double rotationEasingFactor = 10.0; // Smooth acceleration/deceleration
+  const double rotationEasingFactor = 15.0; // Increased for smoother, slower rotation response
   
-  // Base rotation speed (radians per second)
+  // Base rotation speed (radians per second) - already reduced via rotationSpeed member
   const double baseRotationSpeed = rotationSpeed;
   
   // Calculate target rotation speed based on key presses

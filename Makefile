@@ -35,7 +35,8 @@ SOURCES := \
 	$(SRC_DIR)/rendering/MetalRTRenderer.mm \
 	$(SRC_DIR)/utils/ResolutionManager.cpp \
 	$(SRC_DIR)/utils/VideoRecorder.cpp \
-	$(SRC_DIR)/utils/SaveDialog.mm
+	$(SRC_DIR)/utils/SaveDialog.mm \
+	$(SRC_DIR)/utils/IconLoader.mm
 
 # Object files
 OBJECTS := $(patsubst $(SRC_DIR)/%.cpp,$(BUILD_DIR)/%.o,$(filter %.cpp,$(SOURCES)))

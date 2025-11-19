@@ -15,7 +15,7 @@ struct Resolution {
 class ResolutionManager {
 public:
   // Common resolutions from 144p to 4K
-  static constexpr int NUM_PRESETS = 12;
+  static constexpr int NUM_PRESETS = 11;
   static const Resolution PRESETS[NUM_PRESETS];
   
   ResolutionManager();
@@ -40,8 +40,15 @@ public:
   
   // Get resolution name
   const char* getCurrentName() const { return PRESETS[currentIndex].name; }
+  
+  // Save current resolution to file
+  void saveResolution() const;
+  
+  // Load resolution from file
+  void loadResolution();
 
 private:
   int currentIndex;
+  static constexpr const char* CONFIG_FILE = ".blackhole_resolution";
 };
 

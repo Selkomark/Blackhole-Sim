@@ -30,8 +30,6 @@ std::string formatResolution(int width, int height, ResolutionManager* resolutio
       return "5K";
     } else if (name.find("8K") != std::string::npos) {
       return "8K";
-    } else if (name == "Native") {
-      return "Native";
     }
     // Return the name as-is if it's already formatted
     return name;
@@ -68,16 +66,19 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
     {"C", "Mode: " + std::string(getCinematicModeName(mode)), false, false},
     {"+/-", "Change Resolution", false, false},
     {"", "", true, false}, // Separator
+    {"Cmd+R", "Start Recording", false, false},
+    {"Enter/Esc/Q", "Stop Recording", false, false},
+    {"", "", true, false}, // Separator
     {"F", "Fullscreen", false, false},
     {"Tab", "Toggle Help", false, false},
     {"", "", true, false}, // Separator
     {"ESC/Q", "Quit", false, false},
     {"", "", true, false}, // Separator
-    {"", "Resolution: " + resolutionStr, false, true},
-    {"", "FPS: " + std::to_string(fps), false, true}
+    {"Resolution:", resolutionStr, false, true},
+    {"FPS:", std::to_string(fps), false, true}
   };
   
-  const int numHints = 18; // Number of hints in the array
+  const int numHints = sizeof(hints) / sizeof(hints[0]); // Calculate array size automatically
 
   // Calculate maximum widths for table alignment
   int maxKeyWidth = 0;
@@ -161,8 +162,17 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
       keyColor = highlightColor;
       descColor = highlightColor;
     }
+    // Highlight recording controls in red/orange
+    else if (i == 11) { // Cmd+R - Start Recording
+      keyColor = {255, 100, 100, 255}; // Light red
+      descColor = {255, 100, 100, 255};
+    }
+    else if (i == 12) { // Enter/Esc/Q - Stop Recording
+      keyColor = {255, 150, 100, 255}; // Orange-red
+      descColor = {255, 150, 100, 255};
+    }
     // Highlight Tab key in blue
-    else if (i == 12) {
+    else if (i == 15) {
       keyColor = highlightColor;
       descColor = highlightColor;
     }
@@ -177,11 +187,11 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
       descColor = cinematicColor;
     }
     // Highlight Resolution in cyan-blue
-    else if (i == 16) {
+    else if (i == 19) {
       descColor = highlightColor; // Info line, no key
     }
     // Highlight FPS in green
-    else if (i == 17) {
+    else if (i == 20) {
       descColor = fpsColor; // Info line, no key
     }
     

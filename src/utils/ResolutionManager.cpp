@@ -2,6 +2,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <fstream>
+#include <iostream>
+#include <cstdlib>
+#include <cstring>
 
 // Resolution presets from 144p to 4K
 const Resolution ResolutionManager::PRESETS[ResolutionManager::NUM_PRESETS] = {
@@ -19,6 +23,7 @@ const Resolution ResolutionManager::PRESETS[ResolutionManager::NUM_PRESETS] = {
 };
 
 ResolutionManager::ResolutionManager() : currentIndex(5) { // Default to 1080p
+  loadResolution(); // Load saved resolution if available
 }
 
 void ResolutionManager::next() {
@@ -39,7 +44,7 @@ int ResolutionManager::findClosestPreset(int width, int height) const {
   int closestIndex = 0;
   int minDiff = std::numeric_limits<int>::max();
   
-  for (int i = 0; i < NUM_PRESETS - 1; i++) { // Exclude "Native"
+  for (int i = 0; i < NUM_PRESETS; i++) {
     int diff = std::abs(PRESETS[i].width - width) + std::abs(PRESETS[i].height - height);
     if (diff < minDiff) {
       minDiff = diff;
@@ -48,5 +53,39 @@ int ResolutionManager::findClosestPreset(int width, int height) const {
   }
   
   return closestIndex;
+}
+
+void ResolutionManager::saveResolution() const {
+  // Get home directory
+  const char* home = std::getenv("HOME");
+  if (!home) {
+    return; // Can't save without home directory
+  }
+  
+  std::string configPath = std::string(home) + "/" + CONFIG_FILE;
+  std::ofstream file(configPath);
+  if (file.is_open()) {
+    file << currentIndex << std::endl;
+    file.close();
+  }
+}
+
+void ResolutionManager::loadResolution() {
+  // Get home directory
+  const char* home = std::getenv("HOME");
+  if (!home) {
+    return; // Can't load without home directory
+  }
+  
+  std::string configPath = std::string(home) + "/" + CONFIG_FILE;
+  std::ifstream file(configPath);
+  if (file.is_open()) {
+    int savedIndex;
+    file >> savedIndex;
+    if (savedIndex >= 0 && savedIndex < NUM_PRESETS) {
+      currentIndex = savedIndex;
+    }
+    file.close();
+  }
 }
 

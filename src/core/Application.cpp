@@ -1,9 +1,11 @@
 #include "../../include/core/Application.hpp"
 #include "../../include/utils/SaveDialog.h"
+#include "../../include/utils/IconLoader.h"
 #include <iostream>
 #include <chrono>
 #include <string>
 #include <ctime>
+#include <algorithm>
 
 Application::Application()
     : window(nullptr), sdlRenderer(nullptr), font(nullptr),
@@ -25,26 +27,13 @@ bool Application::initialize() {
     return false;
   }
 
-  // Initialize resolution manager and set to 1080p (default)
+  // Initialize resolution manager (loads saved resolution or defaults to 1080p)
   resolutionManager = new ResolutionManager();
-  resolutionManager->setResolution(5); // 1080p FHD
   
   // Get selected resolution for rendering
   const Resolution& res = resolutionManager->getCurrent();
-  if (res.width == 0 && res.height == 0) {
-    // Native resolution - use desktop resolution
-    SDL_DisplayMode displayMode;
-    if (SDL_GetDesktopDisplayMode(0, &displayMode) == 0) {
-      renderWidth = displayMode.w;
-      renderHeight = displayMode.h;
-    } else {
-      renderWidth = 1920;
-      renderHeight = 1080;
-    }
-  } else {
-    renderWidth = res.width;
-    renderHeight = res.height;
-  }
+  renderWidth = res.width;
+  renderHeight = res.height;
   
   // Window size - use a reasonable default that matches common screen sizes
   // This will be the display size, rendering resolution is separate
@@ -66,6 +55,9 @@ bool Application::initialize() {
     std::cerr << "Window could not be created! SDL_Error: " << SDL_GetError() << std::endl;
     return false;
   }
+  
+  // Load and set window icon
+  loadWindowIcon(window, "assets/export/iOS-Default-1024x1024@1x.png");
   
   // Get actual window size (may differ due to high DPI)
   int actualWidth, actualHeight;
@@ -210,26 +202,22 @@ void Application::handleEvents() {
         break;
       }
       
-      // Check for Enter or Esc to stop recording
-      if (isRecording && (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER || e.key.keysym.sym == SDLK_ESCAPE)) {
-        stopRecording();
-        // If Esc was pressed and not recording anymore, handle normally
-        if (e.key.keysym.sym == SDLK_ESCAPE && !isRecording) {
-          if (isFullscreen) {
-            toggleFullscreen();
-          } else {
-            running = false;
-          }
+      // When recording, Esc and Q should stop recording instead of quitting
+      if (isRecording) {
+        if (e.key.keysym.sym == SDLK_ESCAPE || e.key.keysym.sym == SDLK_q) {
+          stopRecording();
+          break;
         }
-        break;
+        // Enter also stops recording
+        if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
+          stopRecording();
+          break;
+        }
       }
       
       switch (e.key.keysym.sym) {
         case SDLK_ESCAPE:
-          if (isRecording) {
-            stopRecording();
-            break;
-          }
+          // Only handle ESC for quitting if not recording (handled above)
           if (isFullscreen) {
             toggleFullscreen(); // Exit fullscreen on ESC
           } else {
@@ -237,6 +225,7 @@ void Application::handleEvents() {
           }
           break;
         case SDLK_q:
+          // Only quit if not recording (handled above)
           running = false;
           break;
         case SDLK_f:
@@ -462,9 +451,7 @@ void Application::toggleFullscreen() {
   // In fullscreen, window size matches native display resolution
   // Rendering resolution is still controlled by resolution manager
   // This allows changing quality without changing window size
-  if (isFullscreen) {
-    resolutionManager->setResolution(resolutionManager->findClosestPreset(windowWidth, windowHeight));
-  }
+  // Note: Resolution is preserved when toggling fullscreen
   
   handleWindowResize(windowWidth, windowHeight);
   
@@ -521,6 +508,11 @@ void Application::updateWindowTitle() {
 
 
 void Application::changeResolution(bool increase) {
+  // Don't allow resolution change during recording
+  if (isRecording) {
+    return;
+  }
+  
   if (increase) {
     resolutionManager->next();
   } else {
@@ -530,21 +522,8 @@ void Application::changeResolution(bool increase) {
   const Resolution& res = resolutionManager->getCurrent();
   
   // Calculate new rendering resolution (window size stays the same)
-  int newRenderWidth, newRenderHeight;
-  if (res.width == 0 && res.height == 0) {
-    // Native resolution - use desktop resolution
-    SDL_DisplayMode displayMode;
-    if (SDL_GetDesktopDisplayMode(0, &displayMode) == 0) {
-      newRenderWidth = displayMode.w;
-      newRenderHeight = displayMode.h;
-    } else {
-      newRenderWidth = 1920;
-      newRenderHeight = 1080;
-    }
-  } else {
-    newRenderWidth = res.width;
-    newRenderHeight = res.height;
-  }
+  int newRenderWidth = res.width;
+  int newRenderHeight = res.height;
   
   // Skip if same rendering resolution
   if (newRenderWidth == renderWidth && newRenderHeight == renderHeight) {
@@ -555,6 +534,9 @@ void Application::changeResolution(bool increase) {
   renderWidth = newRenderWidth;
   renderHeight = newRenderHeight;
   
+  // Save resolution preference
+  resolutionManager->saveResolution();
+  
   // Recreate render targets with new resolution
   recreateRenderTargets();
 }
@@ -564,11 +546,46 @@ void Application::startRecording() {
     return;
   }
   
-  // Generate filename with timestamp
+  // Get formatted resolution name (e.g., "1080p", "4K", etc.)
+  std::string resolutionName;
+  if (resolutionManager) {
+    const Resolution& res = resolutionManager->getCurrent();
+    if (res.name && res.name[0] != '\0') {
+      std::string name = res.name;
+      // Format common resolution names
+      if (name.find("4K") != std::string::npos || name.find("2160p") != std::string::npos) {
+        resolutionName = "4K";
+      } else if (name.find("1080p") != std::string::npos) {
+        resolutionName = "1080p";
+      } else if (name.find("1440p") != std::string::npos || name.find("QHD") != std::string::npos) {
+        resolutionName = "1440p";
+      } else if (name.find("720p") != std::string::npos) {
+        resolutionName = "720p";
+      } else if (name.find("5K") != std::string::npos) {
+        resolutionName = "5K";
+      } else if (name.find("8K") != std::string::npos) {
+        resolutionName = "8K";
+      } else {
+        // Use the name as-is, but clean it up (remove spaces, etc.)
+        resolutionName = name;
+        // Replace spaces with underscores for filename
+        std::replace(resolutionName.begin(), resolutionName.end(), ' ', '_');
+      }
+    } else {
+      // Fallback to dimensions if no name
+      resolutionName = std::to_string(renderWidth) + "x" + std::to_string(renderHeight);
+    }
+  } else {
+    // Fallback to dimensions
+    resolutionName = std::to_string(renderWidth) + "x" + std::to_string(renderHeight);
+  }
+  
+  // Generate filename with formatted resolution and timestamp
   std::time_t now = std::time(nullptr);
   std::tm* tm = std::localtime(&now);
   char filename[256];
-  std::snprintf(filename, sizeof(filename), "blackhole_recording_%04d%02d%02d_%02d%02d%02d.mp4",
+  std::snprintf(filename, sizeof(filename), "blackhole_recording_%s_%04d%02d%02d_%02d%02d%02d.mp4",
+                resolutionName.c_str(),
                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                 tm->tm_hour, tm->tm_min, tm->tm_sec);
   
