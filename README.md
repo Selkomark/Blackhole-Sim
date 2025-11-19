@@ -73,7 +73,7 @@ The simulation window will open with the camera automatically orbiting the black
 | **F** | Toggle fullscreen mode |
 | **+/-** | Increase/Decrease resolution (cycles through presets) |
 | **C** | Cycle through cinematic camera modes |
-| **IJKL** | Rotate camera view (I/K: Right axis, J/L: Up axis) |
+| **IJKL** | Rotate camera view 1(I/K: Right axis, J/L: Up axis) |
 | **OU** | Rotate Forward axis (works in all modes) |
 | **W/S** | Move camera up/down (Manual mode only) |
 | **A/D** | Zoom in/out (Manual mode only) |
@@ -239,7 +239,7 @@ This will build, sign (if certificate available), and create a DMG file in the `
 
 ## License
 
-This project is provided as-is for educational and research purposes.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
