@@ -70,16 +70,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          ./vcpkg/vcpkg install \
-            sdl2 \
-            sdl2-ttf \
-            freetype \
-            libpng \
-            bzip2 \
-            zlib \
-            brotli \
-            ffmpeg \
-            --triplet ${{ matrix.triplet }}
+          ./vcpkg/vcpkg install --triplet ${{ matrix.triplet }}
       
       - name: Update Makefile for architecture
         run: |
