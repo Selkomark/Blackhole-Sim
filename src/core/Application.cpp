@@ -6,6 +6,10 @@
 #include <string>
 #include <ctime>
 #include <algorithm>
+#include <sstream>
+
+// External logging function from main.cpp
+extern void appLog(const std::string& message, bool isError = false);
 
 Application::Application()
     : window(nullptr), sdlRenderer(nullptr), font(nullptr),
@@ -205,11 +209,20 @@ void Application::handleEvents() {
       running = false;
     } else if (e.type == SDL_KEYDOWN) {
       // Check for Command+R (start recording)
-      if (e.key.keysym.sym == SDLK_r && (e.key.keysym.mod & KMOD_GUI)) {
+      // On macOS, KMOD_GUI represents the Command key (both left and right)
+      // Use SDL_GetModState() for more reliable modifier detection
+      SDL_Keymod currentMods = SDL_GetModState();
+      bool isCommandPressed = (currentMods & KMOD_GUI) != 0;
+      
+      if (e.key.keysym.sym == SDLK_r && isCommandPressed) {
         if (!isRecording) {
+          std::ostringstream logMsg;
+          logMsg << "[KEYBOARD] Command+R pressed - starting recording...";
+          appLog(logMsg.str());
           std::cout << "Command+R pressed - starting recording..." << std::endl;
           startRecording();
         } else {
+          appLog("[KEYBOARD] Command+R pressed but already recording!");
           std::cout << "Already recording!" << std::endl;
         }
         break;
@@ -246,7 +259,7 @@ void Application::handleEvents() {
           break;
         case SDLK_r:
           // Only reset camera if Command is not pressed (Command+R is handled above)
-          if (!(e.key.keysym.mod & KMOD_GUI)) {
+          if (!(SDL_GetModState() & KMOD_GUI)) {
             cinematicCamera->reset();
           }
           break;
@@ -514,9 +527,18 @@ void Application::updateWindowTitle() {
                       std::string(cinematicCamera->getModeName()) +
                       " - FPS: " + std::to_string(currentFPS);
   if (isRecording) {
-    title = "🔴 " + title;
+    // Use both emoji and text indicator for maximum compatibility
+    // macOS window titles may not always display emoji correctly
+    title = "🔴 [REC] " + title;
   }
   SDL_SetWindowTitle(window, title.c_str());
+  
+  // Log title updates when recording (for debugging)
+  if (isRecording) {
+    std::ostringstream logMsg;
+    logMsg << "[WINDOW] Title updated (recording): " << title;
+    appLog(logMsg.str());
+  }
 }
 
 
@@ -555,7 +577,13 @@ void Application::changeResolution(bool increase) {
 }
 
 void Application::startRecording() {
-  if (isRecording || !videoRecorder) {
+  if (isRecording) {
+    std::cerr << "Cannot start recording: already recording!" << std::endl;
+    return;
+  }
+  
+  if (!videoRecorder) {
+    std::cerr << "Cannot start recording: videoRecorder is null!" << std::endl;
     return;
   }
   
@@ -596,25 +624,47 @@ void Application::startRecording() {
   // Generate filename with formatted resolution and timestamp
   std::time_t now = std::time(nullptr);
   std::tm* tm = std::localtime(&now);
-  char filename[256];
-  std::snprintf(filename, sizeof(filename), "blackhole_recording_%s_%04d%02d%02d_%02d%02d%02d.mp4",
+  char filenameBase[256];
+  std::snprintf(filenameBase, sizeof(filenameBase), "blackhole_recording_%s_%04d%02d%02d_%02d%02d%02d.mp4",
                 resolutionName.c_str(),
                 tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
                 tm->tm_hour, tm->tm_min, tm->tm_sec);
   
-  if (videoRecorder->startRecording(filename, renderWidth, renderHeight, currentFPS > 0 ? currentFPS : 60)) {
+  // Use /tmp directory for temporary recording file (writable location)
+  // The file will be moved to user's chosen location after recording stops
+  std::string filename = std::string("/tmp/") + filenameBase;
+  
+  int fps = currentFPS > 0 ? currentFPS : 60;
+  std::ostringstream logMsg;
+  logMsg << "[RECORDING] Attempting to start recording: " << filename 
+         << " (" << renderWidth << "×" << renderHeight << "@" << fps << "fps)";
+  appLog(logMsg.str());
+  std::cout << "Attempting to start recording: " << filename 
+            << " (" << renderWidth << "×" << renderHeight << "@" << fps << "fps)" << std::endl;
+  
+  if (videoRecorder->startRecording(filename, renderWidth, renderHeight, fps)) {
     isRecording = true;
     updateWindowTitle();
-    std::cout << "Recording started at " << renderWidth << "×" << renderHeight << std::endl;
+    logMsg.str("");
+    logMsg << "[RECORDING] ✓ Recording started successfully at " << renderWidth << "×" << renderHeight;
+    appLog(logMsg.str());
+    std::cout << "✓ Recording started successfully at " << renderWidth << "×" << renderHeight << std::endl;
   } else {
-    std::cerr << "Failed to start recording!" << std::endl;
+    std::ostringstream errMsg;
+    errMsg << "[RECORDING] ✗ Failed to start recording! Check console for FFmpeg errors.";
+    appLog(errMsg.str(), true);
+    std::cerr << "✗ Failed to start recording! Check console for FFmpeg errors." << std::endl;
+    isRecording = false; // Ensure flag is false on failure
   }
 }
 
 void Application::stopRecording() {
   if (!isRecording || !videoRecorder) {
+    appLog("[RECORDING] stopRecording() called but not recording or videoRecorder is null");
     return;
   }
+  
+  appLog("[RECORDING] Stopping recording...");
   
   // Stop recording first
   videoRecorder->stopRecording();
@@ -622,19 +672,39 @@ void Application::stopRecording() {
   isRecording = false;
   updateWindowTitle();
   
-  // Show save dialog
-  std::string savePath = showSaveDialog(tempFilename);
+  std::ostringstream logMsg;
+  logMsg << "[RECORDING] Recording stopped. Temp file: " << tempFilename;
+  appLog(logMsg.str());
+  
+  // Extract just the filename (without directory path) for the save dialog
+  std::string dialogFilename = tempFilename;
+  size_t lastSlash = tempFilename.find_last_of("/");
+  if (lastSlash != std::string::npos && lastSlash + 1 < tempFilename.length()) {
+    dialogFilename = tempFilename.substr(lastSlash + 1);
+  }
+  
+  // Show save dialog with just the filename (not the full /tmp/ path)
+  std::string savePath = showSaveDialog(dialogFilename);
   
   if (!savePath.empty()) {
     // Move file to user-selected location
     if (videoRecorder->moveFile(savePath)) {
+      logMsg.str("");
+      logMsg << "[RECORDING] Recording saved to: " << savePath;
+      appLog(logMsg.str());
       std::cout << "Recording saved to: " << savePath << std::endl;
     } else {
+      logMsg.str("");
+      logMsg << "[RECORDING] Failed to move recording to: " << savePath << " (original: " << tempFilename << ")";
+      appLog(logMsg.str(), true);
       std::cerr << "Failed to move recording to: " << savePath << std::endl;
       std::cerr << "Original file is still at: " << tempFilename << std::endl;
     }
   } else {
     // User cancelled - keep file in original location
+    logMsg.str("");
+    logMsg << "[RECORDING] User cancelled save dialog. Recording saved to: " << tempFilename;
+    appLog(logMsg.str());
     std::cout << "Recording saved to: " << tempFilename << std::endl;
   }
 }

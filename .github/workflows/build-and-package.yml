@@ -82,7 +82,12 @@ jobs:
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "TRIPLET=${{ matrix.triplet }}" >> $GITHUB_ENV
-          echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
+          # Check which installation location vcpkg uses (manifest mode uses vcpkg_installed)
+          if [ -d "./vcpkg_installed/${{ matrix.triplet }}" ]; then
+            echo "VCPKG_INSTALLED=./vcpkg_installed/${{ matrix.triplet }}" >> $GITHUB_ENV
+          else
+            echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
+          fi
           echo "APP_VERSION=${{ steps.version.outputs.version }}" >> $GITHUB_ENV
       
       - name: Cache vcpkg
@@ -120,7 +125,9 @@ jobs:
         id: cache-vcpkg-installed
         uses: actions/cache@v4
         with:
-          path: vcpkg/installed/${{ matrix.triplet }}
+          path: |
+            vcpkg/installed/${{ matrix.triplet }}
+            vcpkg_installed/${{ matrix.triplet }}
           key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-${{ matrix.triplet }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-
@@ -156,70 +163,141 @@ jobs:
             echo "installed directory does not exist yet"
           fi
           
+          # Ensure installed directory exists
+          mkdir -p "./vcpkg/installed/${{ matrix.triplet }}"
+          
           # Always run vcpkg install - it will skip already installed packages
           # but will install missing ones even if cache was restored
           echo "Running vcpkg install..."
+          # Use manifest mode by running from project root (vcpkg.json is in root)
           if ! ./vcpkg/vcpkg install --triplet ${{ matrix.triplet }}; then
             echo "❌ Error: vcpkg install failed!"
             echo "Checking vcpkg installed directory:"
             ls -la "./vcpkg/installed/" || echo "installed directory does not exist"
+            echo "Checking for alternative installation locations:"
+            find . -type d -name "installed" 2>/dev/null | head -10 || true
+            echo "Checking vcpkg packages directory:"
+            ls -la "./vcpkg/packages/" 2>/dev/null | head -20 || true
             exit 1
           fi
           
           echo "✅ vcpkg install completed successfully"
           echo "Checking installed directory after install:"
-          if [ -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
-            ls -la "./vcpkg/installed/${{ matrix.triplet }}/" || true
-            echo "Package count:"
-            find "./vcpkg/installed/${{ matrix.triplet }}" -name "*.pc" -o -name "*.cmake" | wc -l || true
+          echo "Current directory: $(pwd)"
+          echo "Looking for installed directory:"
+          ls -la "./vcpkg/" || true
+          
+          # Wait a moment for any background operations to complete
+          sleep 2
+          
+          if [ -d "./vcpkg/installed" ]; then
+            echo "Found installed directory, listing contents:"
+            ls -la "./vcpkg/installed/" || true
+          fi
+          
+          # Check if packages directory has the triplet (packages are built here first)
+          if [ -d "./vcpkg/packages" ]; then
+            echo "Checking packages directory:"
+            ls -la "./vcpkg/packages/" | grep "${{ matrix.triplet }}" || true
+          fi
+          
+          # Check both possible installation locations (vcpkg/installed and vcpkg_installed)
+          INSTALLED_DIR=""
+          if [ -d "./vcpkg_installed/${{ matrix.triplet }}" ]; then
+            INSTALLED_DIR="./vcpkg_installed/${{ matrix.triplet }}"
+            echo "✅ Found triplet directory in vcpkg_installed (manifest mode)"
+          elif [ -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+            INSTALLED_DIR="./vcpkg/installed/${{ matrix.triplet }}"
+            echo "✅ Found triplet directory in vcpkg/installed"
           else
-            echo "❌ ERROR: Triplet directory still does not exist after install!"
+            echo "⚠️  Triplet directory not found in either location, checking packages:"
+            if [ -d "./vcpkg/packages" ]; then
+              echo "Packages directory exists, checking for installed packages:"
+              find "./vcpkg/packages" -maxdepth 1 -type d -name "*_${{ matrix.triplet }}" | head -5 || true
+            fi
+            echo "Checking for vcpkg_installed directory:"
+            ls -la "./vcpkg_installed/" 2>/dev/null || echo "vcpkg_installed does not exist"
+            echo "Checking for vcpkg/installed directory:"
+            ls -la "./vcpkg/installed/" 2>/dev/null || echo "vcpkg/installed does not exist"
+            echo "❌ ERROR: Triplet directory not found in either location!"
+            echo "Searching for triplet directory in alternative locations:"
+            find . -type d -name "${{ matrix.triplet }}" 2>/dev/null | head -10 || true
+            echo "Checking vcpkg root structure:"
+            find ./vcpkg -maxdepth 3 -type d | head -20 || true
             exit 1
+          fi
+          
+          # Display contents of found directory
+          if [ -n "$INSTALLED_DIR" ]; then
+            echo "Installed directory: $INSTALLED_DIR"
+            ls -la "$INSTALLED_DIR/" || true
+            echo "Package count:"
+            find "$INSTALLED_DIR" -name "*.pc" -o -name "*.cmake" | wc -l || true
+            # Update environment variable if using vcpkg_installed
+            if [[ "$INSTALLED_DIR" == "./vcpkg_installed"* ]]; then
+              echo "VCPKG_INSTALLED=$INSTALLED_DIR" >> $GITHUB_ENV
+            fi
           fi
       
       - name: Verify vcpkg installation
         run: |
           echo "Verifying vcpkg installation for ${{ matrix.triplet }}..."
           
-          # Check if installed directory exists
-          if [ ! -d "./vcpkg/installed" ]; then
-            echo "❌ Error: vcpkg installed directory not found!"
-            echo "Contents of vcpkg directory:"
-            ls -la "./vcpkg/" || true
-            exit 1
-          fi
-          
-          if [ ! -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+          # Determine installed directory (use environment variable if set, otherwise check both locations)
+          if [ -n "$VCPKG_INSTALLED" ]; then
+            INSTALLED_DIR="$VCPKG_INSTALLED"
+          elif [ -d "./vcpkg_installed/${{ matrix.triplet }}" ]; then
+            INSTALLED_DIR="./vcpkg_installed/${{ matrix.triplet }}"
+          elif [ -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+            INSTALLED_DIR="./vcpkg/installed/${{ matrix.triplet }}"
+          else
             echo "❌ Error: vcpkg installed directory for triplet ${{ matrix.triplet }} not found!"
-            echo "Available triplets:"
-            ls -la "./vcpkg/installed/" || true
+            echo "Checking both possible locations:"
+            ls -la "./vcpkg/installed/" 2>/dev/null || echo "vcpkg/installed does not exist"
+            ls -la "./vcpkg_installed/" 2>/dev/null || echo "vcpkg_installed does not exist"
             exit 1
           fi
           
-          echo "✅ Installed directory exists: ./vcpkg/installed/${{ matrix.triplet }}"
+          echo "✅ Installed directory exists: $INSTALLED_DIR"
           
           # Check for SDL2 headers
-          if [ ! -f "./vcpkg/installed/${{ matrix.triplet }}/include/SDL2/SDL.h" ]; then
+          if [ ! -f "$INSTALLED_DIR/include/SDL2/SDL.h" ]; then
             echo "❌ Error: SDL2 headers not found!"
             echo "Checking include directory contents:"
-            ls -la "./vcpkg/installed/${{ matrix.triplet }}/include/" || true
-            if [ -d "./vcpkg/installed/${{ matrix.triplet }}/include" ]; then
+            ls -la "$INSTALLED_DIR/include/" || true
+            if [ -d "$INSTALLED_DIR/include" ]; then
               echo "Subdirectories in include:"
-              find "./vcpkg/installed/${{ matrix.triplet }}/include" -maxdepth 2 -type d | head -20
+              find "$INSTALLED_DIR/include" -maxdepth 2 -type d | head -20
             fi
             exit 1
           fi
           
-          echo "✅ SDL2 headers found at: ./vcpkg/installed/${{ matrix.triplet }}/include/SDL2/SDL.h"
+          echo "✅ SDL2 headers found at: $INSTALLED_DIR/include/SDL2/SDL.h"
+          echo "VCPKG_INSTALLED=$INSTALLED_DIR" >> $GITHUB_ENV
       
       - name: Update Makefile for architecture
         run: |
+          # Determine installed directory (use environment variable if set, otherwise check both locations)
+          if [ -n "$VCPKG_INSTALLED" ]; then
+            INSTALLED_DIR="$VCPKG_INSTALLED"
+          elif [ -d "./vcpkg_installed/${{ matrix.triplet }}" ]; then
+            INSTALLED_DIR="./vcpkg_installed/${{ matrix.triplet }}"
+          elif [ -d "./vcpkg/installed/${{ matrix.triplet }}" ]; then
+            INSTALLED_DIR="./vcpkg/installed/${{ matrix.triplet }}"
+          else
+            echo "❌ Error: Could not determine vcpkg installed directory!"
+            exit 1
+          fi
+          
           # Update VCPKG_INSTALLED path in Makefile (macOS sed syntax)
-          sed -i '' "s|VCPKG_INSTALLED := .*|VCPKG_INSTALLED := ./vcpkg/installed/${{ matrix.triplet }}|" Makefile
-          # Update RPATH
-          sed -i '' "s|-Wl,-rpath,\\./vcpkg/installed/[^ ]*|-Wl,-rpath,./vcpkg/installed/${{ matrix.triplet }}/lib|" Makefile
+          sed -i '' "s|VCPKG_INSTALLED := .*|VCPKG_INSTALLED := $INSTALLED_DIR|" Makefile
+          # Update RPATH (escape slashes for sed)
+          INSTALLED_DIR_ESCAPED=$(echo "$INSTALLED_DIR" | sed 's|/|\\/|g')
+          sed -i '' "s|-Wl,-rpath,\\./vcpkg/installed/[^ ]*|-Wl,-rpath,$INSTALLED_DIR/lib|" Makefile
+          sed -i '' "s|-Wl,-rpath,\\./vcpkg_installed/[^ ]*|-Wl,-rpath,$INSTALLED_DIR/lib|" Makefile
           echo "Updated Makefile for ${{ matrix.triplet }}"
-          echo "VCPKG_INSTALLED path:"
+          echo "VCPKG_INSTALLED path: $INSTALLED_DIR"
+          echo "VCPKG_INSTALLED in Makefile:"
           grep "VCPKG_INSTALLED" Makefile
           echo "Include path:"
           grep "INCLUDES" Makefile

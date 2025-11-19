@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <sys/stat.h>
 
+// External logging function from main.cpp
+extern void appLog(const std::string& message, bool isError = false);
+
 // FFmpeg headers - wrap in extern "C" to prevent C++ name mangling
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -56,6 +59,11 @@ bool VideoRecorder::startRecording(const std::string& file, int width, int heigh
     filename = oss.str();
   }
   
+  // Log the filename being used (for debugging)
+  std::ostringstream logMsg;
+  logMsg << "[FFMPEG] Recording filename: " << filename;
+  appLog(logMsg.str());
+  
   // Initialize encoder first, only set recording flag if successful
   if (initializeEncoder()) {
     recording = true;
@@ -82,6 +90,9 @@ bool VideoRecorder::initializeEncoder() {
   if (ret < 0 || !ctx->formatContext) {
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
     av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+    std::ostringstream errMsg;
+    errMsg << "[FFMPEG] Could not create output context: " << errbuf;
+    appLog(errMsg.str(), true);
     std::cerr << "Could not create output context: " << errbuf << std::endl;
     cleanupEncoder();
     return false;
@@ -116,16 +127,21 @@ bool VideoRecorder::initializeEncoder() {
   }
   
   if (!codec) {
+    appLog("[FFMPEG] H.264 codec not found", true);
     std::cerr << "H.264 codec not found" << std::endl;
     cleanupEncoder();
     return false;
   }
   
+  std::ostringstream logMsg;
+  logMsg << "[FFMPEG] Using encoder: " << codec->name;
+  appLog(logMsg.str());
   std::cout << "Using encoder: " << codec->name << std::endl;
   
   // Create codec context
   ctx->codecContext = avcodec_alloc_context3(codec);
   if (!ctx->codecContext) {
+    appLog("[FFMPEG] Could not allocate codec context", true);
     std::cerr << "Could not allocate codec context" << std::endl;
     cleanupEncoder();
     return false;
@@ -214,6 +230,9 @@ bool VideoRecorder::initializeEncoder() {
   if (ret < 0) {
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
     av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+    std::ostringstream errMsg;
+    errMsg << "[FFMPEG] Could not open codec: " << errbuf;
+    appLog(errMsg.str(), true);
     std::cerr << "Could not open codec: " << errbuf << std::endl;
     cleanupEncoder();
     return false;
@@ -222,6 +241,7 @@ bool VideoRecorder::initializeEncoder() {
   // Create video stream
   ctx->videoStream = avformat_new_stream(ctx->formatContext, codec);
   if (!ctx->videoStream) {
+    appLog("[FFMPEG] Could not create video stream", true);
     std::cerr << "Could not create video stream" << std::endl;
     cleanupEncoder();
     return false;
@@ -241,6 +261,9 @@ bool VideoRecorder::initializeEncoder() {
     if (ret < 0) {
       char errbuf[AV_ERROR_MAX_STRING_SIZE];
       av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+      std::ostringstream errMsg;
+      errMsg << "[FFMPEG] Could not open output file " << filename << ": " << errbuf;
+      appLog(errMsg.str(), true);
       std::cerr << "Could not open output file " << filename << ": " << errbuf << std::endl;
       cleanupEncoder();
       return false;
@@ -252,6 +275,9 @@ bool VideoRecorder::initializeEncoder() {
   if (ret < 0) {
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
     av_strerror(ret, errbuf, AV_ERROR_MAX_STRING_SIZE);
+    std::ostringstream errMsg;
+    errMsg << "[FFMPEG] Could not write header: " << errbuf;
+    appLog(errMsg.str(), true);
     std::cerr << "Could not write header: " << errbuf << std::endl;
     cleanupEncoder();
     return false;
