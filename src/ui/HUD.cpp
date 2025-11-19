@@ -48,42 +48,68 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
   // Format resolution
   std::string resolutionStr = formatResolution(windowWidth, windowHeight, resolutionManager);
 
-  // Define hints array first to calculate content width
-  std::string hints[] = {
-    "CONTROLS",
-    "L/J - Rotate Up Axis",
-    "I/K - Rotate Right Axis",
-    "O/U - Rotate Forward Axis",
-    "W/S - Move Up/Down",
-    "D - Zoom In",
-    "A - Zoom Back",
-    "R - Reset",
-    "C - Mode: " + std::string(getCinematicModeName(mode)),
-    "Resolution: " + resolutionStr,
-    "+/- - Change Resolution",
-    "F - Fullscreen",
-    "Tab - Toggle Help",
-    "ESC/Q - Quit",
-    "FPS: " + std::to_string(fps)
+  // Define hints array with key and description separated
+  struct HintLine {
+    std::string key;
+    std::string description;
+    bool isSeparator;
+    bool isInfo; // For Resolution/FPS lines that don't have keys
   };
+  
+  HintLine hints[] = {
+    {"L/J", "Rotate Up Axis", false, false},
+    {"I/K", "Rotate Right Axis", false, false},
+    {"O/U", "Rotate Forward Axis", false, false},
+    {"", "", true, false}, // Separator
+    {"W/S", "Move Up/Down", false, false},
+    {"A/D", "Zoom In/Out", false, false},
+    {"", "", true, false}, // Separator
+    {"R", "Reset Camera", false, false},
+    {"C", "Mode: " + std::string(getCinematicModeName(mode)), false, false},
+    {"+/-", "Change Resolution", false, false},
+    {"", "", true, false}, // Separator
+    {"F", "Fullscreen", false, false},
+    {"Tab", "Toggle Help", false, false},
+    {"", "", true, false}, // Separator
+    {"ESC/Q", "Quit", false, false},
+    {"", "", true, false}, // Separator
+    {"", "Resolution: " + resolutionStr, false, true},
+    {"", "FPS: " + std::to_string(fps), false, true}
+  };
+  
+  const int numHints = 18; // Number of hints in the array
 
-  // Calculate maximum text width to make overlay responsive
-  int maxTextWidth = 0;
+  // Calculate maximum widths for table alignment
+  int maxKeyWidth = 0;
+  int maxDescriptionWidth = 0;
   int lineHeight = 26; // Increased for larger font
   int padding = 12;
   int textPadding = 16;
+  int columnSpacing = 8; // Space between key and description columns
   
-  for (int i = 0; i < 15; i++) {
-    SDL_Surface *testSurface = TTF_RenderText_Blended(font, hints[i].c_str(), {255, 255, 255, 255});
-    if (testSurface) {
-      maxTextWidth = std::max(maxTextWidth, static_cast<int>(testSurface->w));
-      SDL_FreeSurface(testSurface);
+  for (int i = 0; i < numHints; i++) {
+    if (!hints[i].isSeparator) {
+      if (!hints[i].key.empty()) {
+        SDL_Surface *keySurface = TTF_RenderText_Blended(font, hints[i].key.c_str(), {255, 255, 255, 255});
+        if (keySurface) {
+          maxKeyWidth = std::max(maxKeyWidth, static_cast<int>(keySurface->w));
+          SDL_FreeSurface(keySurface);
+        }
+      }
+      SDL_Surface *descSurface = TTF_RenderText_Blended(font, hints[i].description.c_str(), {255, 255, 255, 255});
+      if (descSurface) {
+        maxDescriptionWidth = std::max(maxDescriptionWidth, static_cast<int>(descSurface->w));
+        SDL_FreeSurface(descSurface);
+      }
     }
   }
   
+  // Calculate total width needed for table layout
+  int maxTextWidth = maxKeyWidth + columnSpacing + maxDescriptionWidth;
+  
   // Calculate overlay dimensions based on content
   int overlayWidth = maxTextWidth + (textPadding * 2);
-  int overlayHeight = (15 * lineHeight) + (textPadding * 2); // Updated for 15 hints
+  int overlayHeight = (numHints * lineHeight) + (textPadding * 2);
   
   // Ensure overlay doesn't exceed window bounds
   overlayWidth = std::min(overlayWidth, windowWidth - (padding * 2));
@@ -114,22 +140,71 @@ void HUD::renderHints(bool showHints, CinematicMode mode, int fps, int windowWid
   SDL_Color cinematicColor = {255, 180, 80, 255}; // Warm orange
   SDL_Color fpsColor = {150, 255, 150, 255}; // Light green for FPS
 
-  // Render text with proper positioning
+  // Render text with proper table alignment
   int y = overlayY + textPadding;
-  for (int i = 0; i < 15; i++) {
-    SDL_Color color = (i == 0) ? highlightColor
-                      : (i == 8) ? cinematicColor
-                      : (i == 9) ? highlightColor // Highlight resolution
-                      : (i == 14) ? fpsColor
-                                 : textColor;
-    
-    // Ensure text doesn't overflow - clip if necessary
-    int textX = overlayX + textPadding;
-    if (textX + maxTextWidth > windowWidth - padding) {
-      textX = windowWidth - maxTextWidth - padding;
+  int keyColumnX = overlayX + textPadding;
+  int descColumnX = keyColumnX + maxKeyWidth + columnSpacing;
+  
+  for (int i = 0; i < numHints; i++) {
+    // Skip separator lines (they're already accounted for in spacing)
+    if (hints[i].isSeparator) {
+      y += lineHeight;
+      continue;
     }
     
-    renderText(hints[i].c_str(), textX, y, color);
+    // Color coding based on content type
+    SDL_Color keyColor = textColor; // Default white for keys
+    SDL_Color descColor = textColor; // Default white for descriptions
+    
+    // Highlight key rotation controls (L/J, I/K, O/U) in blue
+    if (i == 0 || i == 1 || i == 2) {
+      keyColor = highlightColor;
+      descColor = highlightColor;
+    }
+    // Highlight Tab key in blue
+    else if (i == 12) {
+      keyColor = highlightColor;
+      descColor = highlightColor;
+    }
+    // Highlight Reset Camera in orange
+    else if (i == 7) {
+      keyColor = cinematicColor;
+      descColor = cinematicColor;
+    }
+    // Highlight Mode in orange
+    else if (i == 8) {
+      keyColor = cinematicColor;
+      descColor = cinematicColor;
+    }
+    // Highlight Resolution in cyan-blue
+    else if (i == 16) {
+      descColor = highlightColor; // Info line, no key
+    }
+    // Highlight FPS in green
+    else if (i == 17) {
+      descColor = fpsColor; // Info line, no key
+    }
+    
+    // Render key column (right-aligned within its column)
+    if (!hints[i].key.empty()) {
+      SDL_Surface *keySurface = TTF_RenderText_Blended(font, hints[i].key.c_str(), keyColor);
+      if (keySurface) {
+        int keyX = keyColumnX + maxKeyWidth - keySurface->w; // Right-align key
+        SDL_Texture *keyTexture = SDL_CreateTextureFromSurface(renderer, keySurface);
+        if (keyTexture) {
+          SDL_Rect keyRect = {keyX, y, keySurface->w, keySurface->h};
+          SDL_RenderCopy(renderer, keyTexture, nullptr, &keyRect);
+          SDL_DestroyTexture(keyTexture);
+        }
+        SDL_FreeSurface(keySurface);
+      }
+    }
+    
+    // Render description column (left-aligned)
+    if (!hints[i].description.empty()) {
+      renderText(hints[i].description.c_str(), descColumnX, y, descColor);
+    }
+    
     y += lineHeight;
   }
 }
