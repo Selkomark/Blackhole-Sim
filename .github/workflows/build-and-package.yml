@@ -4,8 +4,8 @@ name: Build and Package
 # architectures, creates DMG files, and uploads them as artifacts.
 #
 # Triggers:
-#   - Push to main branch (uses default version 1.0)
-#   - Tags matching 'prod-v*' pattern (e.g., prod-v1.0.0) - extracts version from tag
+#   - Push to main branch (uses default version 1.0) - uploads artifacts only
+#   - Tags matching 'prod-v*' pattern (e.g., prod-v1.0.0) - extracts version from tag and uploads as release assets
 #   - Manual workflow dispatch (can specify version via input)
 #
 # Version Handling:
@@ -15,6 +15,8 @@ name: Build and Package
 #
 # Outputs:
 #   - DMG files for each architecture (Blackhole Simulation-<VERSION>-<arch>.dmg)
+#   - For tag pushes: DMG files are uploaded as release assets on GitHub Releases
+#   - For branch pushes: DMG files are uploaded as workflow artifacts
 #
 # Note: Code signing is enabled if MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD secrets are configured.
 # To set up signing:
@@ -28,11 +30,11 @@ on:
     branches:
       - main
     tags:
-      - 'prod-v*'  # Trigger on production tags like prod-v1.0.0
+      - "prod-v*" # Trigger on production tags like prod-v1.0.0
   workflow_dispatch: # Allow manual triggering
     inputs:
       version:
-        description: 'Version number (e.g., 1.0.0)'
+        description: "Version number (e.g., 1.0.0)"
         required: false
         type: string
 
@@ -48,15 +50,15 @@ jobs:
           - arch: x86_64
             runner: macos-13
             triplet: x64-osx
-    
+
     runs-on: ${{ matrix.runner }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history for tags
-      
+          fetch-depth: 0 # Fetch full history for tags
+
       - name: Extract version from tag
         id: version
         run: |
@@ -77,7 +79,7 @@ jobs:
             echo "⚠️  Using default version: $VERSION"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_ENV
-      
+
       - name: Set up environment
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
@@ -89,7 +91,7 @@ jobs:
             echo "VCPKG_INSTALLED=./vcpkg/installed/${{ matrix.triplet }}" >> $GITHUB_ENV
           fi
           echo "APP_VERSION=${{ steps.version.outputs.version }}" >> $GITHUB_ENV
-      
+
       - name: Cache vcpkg
         id: cache-vcpkg
         uses: actions/cache@v4
@@ -101,12 +103,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-
             ${{ runner.os }}-vcpkg-
-      
+
       - name: Clone vcpkg
         if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/Microsoft/vcpkg.git vcpkg
-      
+
       - name: Make scripts executable
         run: |
           chmod +x scripts/*.sh
@@ -114,13 +116,13 @@ jobs:
           if [ -f "vcpkg/bootstrap-vcpkg.sh" ]; then
             chmod +x vcpkg/bootstrap-vcpkg.sh
           fi
-      
+
       - name: Bootstrap vcpkg
         if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           cd vcpkg
           ./bootstrap-vcpkg.sh
-      
+
       - name: Cache vcpkg installed packages
         id: cache-vcpkg-installed
         uses: actions/cache@v4
@@ -133,7 +135,7 @@ jobs:
             ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-
             ${{ runner.os }}-vcpkg-installed-
         continue-on-error: true
-      
+
       - name: Cache vcpkg downloads
         id: cache-vcpkg-downloads
         uses: actions/cache@v4
@@ -142,12 +144,12 @@ jobs:
           key: ${{ runner.os }}-vcpkg-downloads-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-
-      
+
       - name: Install build dependencies
         run: |
           # Install nasm required for ffmpeg build
           brew install nasm
-      
+
       - name: Install dependencies
         run: |
           echo "Installing vcpkg packages for triplet: ${{ matrix.triplet }}"
@@ -162,10 +164,10 @@ jobs:
           else
             echo "installed directory does not exist yet"
           fi
-          
+
           # Ensure installed directory exists
           mkdir -p "./vcpkg/installed/${{ matrix.triplet }}"
-          
+
           # Always run vcpkg install - it will skip already installed packages
           # but will install missing ones even if cache was restored
           echo "Running vcpkg install..."
@@ -180,27 +182,27 @@ jobs:
             ls -la "./vcpkg/packages/" 2>/dev/null | head -20 || true
             exit 1
           fi
-          
+
           echo "✅ vcpkg install completed successfully"
           echo "Checking installed directory after install:"
           echo "Current directory: $(pwd)"
           echo "Looking for installed directory:"
           ls -la "./vcpkg/" || true
-          
+
           # Wait a moment for any background operations to complete
           sleep 2
-          
+
           if [ -d "./vcpkg/installed" ]; then
             echo "Found installed directory, listing contents:"
             ls -la "./vcpkg/installed/" || true
           fi
-          
+
           # Check if packages directory has the triplet (packages are built here first)
           if [ -d "./vcpkg/packages" ]; then
             echo "Checking packages directory:"
             ls -la "./vcpkg/packages/" | grep "${{ matrix.triplet }}" || true
           fi
-          
+
           # Check both possible installation locations (vcpkg/installed and vcpkg_installed)
           INSTALLED_DIR=""
           if [ -d "./vcpkg_installed/${{ matrix.triplet }}" ]; then
@@ -226,7 +228,7 @@ jobs:
             find ./vcpkg -maxdepth 3 -type d | head -20 || true
             exit 1
           fi
-          
+
           # Display contents of found directory
           if [ -n "$INSTALLED_DIR" ]; then
             echo "Installed directory: $INSTALLED_DIR"
@@ -238,11 +240,11 @@ jobs:
               echo "VCPKG_INSTALLED=$INSTALLED_DIR" >> $GITHUB_ENV
             fi
           fi
-      
+
       - name: Verify vcpkg installation
         run: |
           echo "Verifying vcpkg installation for ${{ matrix.triplet }}..."
-          
+
           # Determine installed directory (use environment variable if set, otherwise check both locations)
           if [ -n "$VCPKG_INSTALLED" ]; then
             INSTALLED_DIR="$VCPKG_INSTALLED"
@@ -257,9 +259,9 @@ jobs:
             ls -la "./vcpkg_installed/" 2>/dev/null || echo "vcpkg_installed does not exist"
             exit 1
           fi
-          
+
           echo "✅ Installed directory exists: $INSTALLED_DIR"
-          
+
           # Check for SDL2 headers
           if [ ! -f "$INSTALLED_DIR/include/SDL2/SDL.h" ]; then
             echo "❌ Error: SDL2 headers not found!"
@@ -271,10 +273,10 @@ jobs:
             fi
             exit 1
           fi
-          
+
           echo "✅ SDL2 headers found at: $INSTALLED_DIR/include/SDL2/SDL.h"
           echo "VCPKG_INSTALLED=$INSTALLED_DIR" >> $GITHUB_ENV
-      
+
       - name: Update Makefile for architecture
         run: |
           # Determine installed directory (use environment variable if set, otherwise check both locations)
@@ -288,7 +290,7 @@ jobs:
             echo "❌ Error: Could not determine vcpkg installed directory!"
             exit 1
           fi
-          
+
           # Update VCPKG_INSTALLED path in Makefile (macOS sed syntax)
           sed -i '' "s|VCPKG_INSTALLED := .*|VCPKG_INSTALLED := $INSTALLED_DIR|" Makefile
           # Update RPATH (escape slashes for sed)
@@ -301,7 +303,7 @@ jobs:
           grep "VCPKG_INSTALLED" Makefile
           echo "Include path:"
           grep "INCLUDES" Makefile
-      
+
       - name: Cache build artifacts
         id: cache-build
         uses: actions/cache@v4
@@ -312,7 +314,7 @@ jobs:
           key: ${{ runner.os }}-build-${{ matrix.arch }}-${{ hashFiles('Makefile', 'src/**/*.cpp', 'src/**/*.mm', 'include/**/*.hpp', 'shaders/**/*.metal') }}
           restore-keys: |
             ${{ runner.os }}-build-${{ matrix.arch }}-
-      
+
       - name: Build application
         env:
           ARCH: ${{ matrix.arch }}
@@ -325,13 +327,13 @@ jobs:
             echo "Cache hit - skipping clean for faster build"
           fi
           make
-      
+
       - name: Create app bundle
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           make app
-      
+
       - name: Import signing certificate
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
@@ -342,44 +344,44 @@ jobs:
             echo "⚠️  Signing secrets not configured, skipping code signing"
             exit 0
           fi
-          
+
           # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          
+
           # Decode certificate
           echo "$MACOS_CERTIFICATE" | base64 --decode > $CERTIFICATE_PATH
-          
+
           # Create temporary keychain
           security create-keychain -p "" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "" $KEYCHAIN_PATH
-          
+
           # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$MACOS_CERTIFICATE_PASSWORD" \
             -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
-          
+
           # Allow codesign to access the certificate
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
-          
+
           # Find and export the signing identity
           IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | \
             grep "Developer ID Application" | \
             head -1 | \
             sed -n 's/.*"\(.*\)".*/\1/p')
-          
+
           if [ -z "$IDENTITY" ]; then
             echo "❌ Error: Could not find Developer ID Application certificate"
             security list-keychain -d user -s login.keychain
             exit 1
           fi
-          
+
           echo "✅ Found signing identity: $IDENTITY"
           echo "MACOS_SIGNING_IDENTITY=$IDENTITY" >> $GITHUB_ENV
           echo "$KEYCHAIN_PATH" > $RUNNER_TEMP/keychain_path.txt
           echo "SIGNING_ENABLED=true" >> $GITHUB_ENV
-      
+
       - name: Sign app bundle
         if: env.SIGNING_ENABLED == 'true'
         env:
@@ -392,13 +394,13 @@ jobs:
             security unlock-keychain -p "" "$KEYCHAIN_PATH"
           fi
           ./scripts/sign_app.sh
-      
+
       - name: Create DMG
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           ./scripts/create_dmg.sh
-      
+
       - name: Rename DMG with architecture
         run: |
           cd export
@@ -406,7 +408,7 @@ jobs:
           if [ -f "Blackhole Simulation-${VERSION}.dmg" ]; then
             mv "Blackhole Simulation-${VERSION}.dmg" "Blackhole Simulation-${VERSION}-${{ matrix.arch }}.dmg"
           fi
-      
+
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
@@ -414,7 +416,7 @@ jobs:
           path: export/Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg
           retention-days: 30
           if-no-files-found: error
-      
+
       - name: Cleanup keychain
         if: always()
         run: |
@@ -423,7 +425,7 @@ jobs:
             security delete-keychain "$KEYCHAIN_PATH" || true
             security list-keychain -d user -s login.keychain || true
           fi
-      
+
       - name: Summary
         run: |
           echo "## Build Summary for ${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
@@ -438,3 +440,51 @@ jobs:
           echo "- Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "- DMG: Blackhole Simulation-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
 
+  # Upload release assets when triggered by a tag
+  upload-release:
+    needs: build
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'prod-v')
+    runs-on: macos-latest
+
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref_name }}" =~ ^prod-v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Extracted version from tag: $VERSION"
+          else
+            echo "❌ Error: Tag format invalid"
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: BlackholeSimulation-${{ steps.version.outputs.version }}-*-dmg
+          merge-multiple: false
+          path: release-assets
+
+      - name: Find and prepare DMG files
+        run: |
+          echo "Looking for DMG files in release-assets..."
+          find release-assets -name "*.dmg" -type f
+          # Count DMG files found
+          DMG_COUNT=$(find release-assets -name "*.dmg" -type f | wc -l | tr -d ' ')
+          echo "Found $DMG_COUNT DMG file(s)"
+          if [ "$DMG_COUNT" -eq 0 ]; then
+            echo "❌ Error: No DMG files found!"
+            exit 1
+          fi
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-assets/**/*.dmg
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
