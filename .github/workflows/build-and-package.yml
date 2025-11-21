@@ -406,8 +406,19 @@ jobs:
           fi
           ./scripts/sign_app.sh
 
+      - name: Check notarization credentials
+        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag'
+        id: check_notary
+        run: |
+          if [ -n "${{ secrets.NOTARY_APPLE_ID }}" ] && [ -n "${{ secrets.NOTARY_TEAM_ID }}" ] && [ -n "${{ secrets.NOTARY_PASSWORD }}" ]; then
+            echo "notarization_enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "notarization_enabled=false" >> $GITHUB_OUTPUT
+            echo "⚠️  Notarization credentials not configured - skipping notarization"
+          fi
+
       - name: Notarize app bundle
-        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag' && secrets.NOTARY_APPLE_ID != ''
+        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag' && steps.check_notary.outputs.notarization_enabled == 'true'
         env:
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
