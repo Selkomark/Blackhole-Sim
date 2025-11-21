@@ -18,6 +18,7 @@ A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tra
 - **Resizable Window**: Drag window edges to resize, rendering adapts automatically
 - **Accurate Physics**: Schwarzschild metric geodesic integration using RK4 (Runge-Kutta 4th order)
 - **Gravitational Lensing**: Light rays bend according to general relativity equations
+- **Doppler Effect**: Relativistic Doppler beaming with blueshift/redshift for orbiting accretion disk material
 - **Volumetric Rendering**: Realistic accretion disk with white-hot temperature gradients
 - **Cinematic Camera**: 5 cinematic modes including smooth orbit, wave motion, rising spiral, and close fly-by
 - **Continuous Animation**: Camera is always in motion for dynamic viewing experience
@@ -38,7 +39,7 @@ A real-time GPU-accelerated black hole simulation using C++20 with Metal ray tra
 
 ```bash
 cd /path/to/your/projects
-git clone <your-repo-url> blackhole_simulation
+git clone https://github.com/Selkomark/Blackhole-Simulation.git blackhole_simulation
 cd blackhole_simulation
 ```
 
@@ -184,6 +185,12 @@ blackhole_simulation/
 - **Schwarzschild Metric**: Models spacetime curvature around a non-rotating black hole
 - **RK4 Integration**: 4th-order Runge-Kutta method for numerical stability
 - **Adaptive Step Size**: Dynamically adjusts based on distance to event horizon
+- **Relativistic Doppler Effect**: 
+  - Calculates Keplerian orbital velocities for accretion disk material
+  - Applies Doppler factor: `δ = 1 / (γ(1 - β·n))` where β is velocity, γ is Lorentz factor
+  - Intensity boosting: `I_observed = I_emitted × δ³` for emission
+  - Color shifting: Blueshift for approaching material (brighter), redshift for receding material (dimmer)
+  - Creates asymmetric brightness in the rotating disk, matching real black hole observations
 
 ### Rendering Pipeline
 
