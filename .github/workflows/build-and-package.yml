@@ -481,10 +481,10 @@ jobs:
 
           echo "📦 Creating .itmsp package for App Store Connect..."
           echo "   This includes creating and signing the .pkg installer"
-          
+
           # Create .itmsp package (create_itmsp.sh will sign .pkg if installer certificate is available)
           ./scripts/create_itmsp.sh
-          
+
           echo "✅ .itmsp package created: export/Blackhole Sim.itmsp"
 
       # Check for Transporter/iTMSTransporter
@@ -495,14 +495,14 @@ jobs:
         id: check_transporter
         run: |
           echo "🔍 Checking for Transporter/iTMSTransporter..."
-          
+
           # Check if Transporter.app is installed
           if [ -d "/Applications/Transporter.app" ] && [ -f "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
             echo "✅ Transporter.app found: /Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
             echo "transporter_available=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Check Xcode paths
           XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
           if [ -n "$XCODE_PATH" ]; then
@@ -520,14 +520,14 @@ jobs:
               fi
             done
           fi
-          
+
           # Check common system locations
           if [ -f "/usr/local/itms/bin/iTMSTransporter" ]; then
             echo "✅ Found iTMSTransporter: /usr/local/itms/bin/iTMSTransporter"
             echo "transporter_available=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Try find command
           FOUND=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f 2>/dev/null | head -1)
           if [ -n "$FOUND" ]; then
@@ -535,7 +535,7 @@ jobs:
             echo "transporter_available=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           echo "⚠️  iTMSTransporter not found"
           echo "   Upload to App Store Connect will be skipped"
           echo "   The .itmsp package will be available as an artifact for manual upload"
