@@ -127,7 +127,7 @@ jobs:
           else
             echo "✅ Xcode path: $XCODE_PATH"
           fi
-          
+
           # Try using xcrun to find Transporter (if available)
           if command -v xcrun &> /dev/null; then
             echo "Checking if xcrun can find Transporter..."
@@ -191,7 +191,7 @@ jobs:
 
           # If not found, try to install Transporter
           echo "⚠️  iTMSTransporter not found, attempting to install..."
-          
+
           # Try installing mas-cli first (Mac App Store CLI)
           if ! command -v mas &> /dev/null; then
             echo "📥 Installing mas-cli (Mac App Store CLI)..."
@@ -201,7 +201,7 @@ jobs:
               echo "⚠️  Homebrew not available, cannot install mas-cli"
             fi
           fi
-          
+
           # Try to install Transporter via mas-cli (requires App Store authentication)
           if command -v mas &> /dev/null; then
             echo "📥 Attempting to install Transporter via mas-cli..."
@@ -219,14 +219,14 @@ jobs:
               echo "⚠️  Failed to install Transporter via mas-cli (likely authentication issue)"
             fi
           fi
-          
+
           # Final check: try to find it one more time after potential installation
           echo "🔍 Final search after installation attempts..."
           FINAL_SEARCH=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f -perm +111 2>/dev/null | head -1)
           if [ -n "$FINAL_SEARCH" ] && check_transporter "$FINAL_SEARCH"; then
             exit 0
           fi
-          
+
           # If still not found, fail the workflow
           echo ""
           echo "❌ ERROR: iTMSTransporter not found and could not be installed!"
