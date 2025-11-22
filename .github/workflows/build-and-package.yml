@@ -114,20 +114,7 @@ jobs:
           fi
           echo "APP_VERSION=${{ steps.version.outputs.version }}" >> $GITHUB_ENV
 
-      - name: Cache vcpkg
-        id: cache-vcpkg
-        uses: actions/cache@v4
-        with:
-          path: |
-            vcpkg
-            ~/.cache/vcpkg
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-${{ matrix.triplet }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}-
-            ${{ runner.os }}-vcpkg-
-
       - name: Clone vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/Microsoft/vcpkg.git vcpkg
 
@@ -140,32 +127,9 @@ jobs:
           fi
 
       - name: Bootstrap vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           cd vcpkg
           ./bootstrap-vcpkg.sh
-
-      - name: Cache vcpkg installed packages
-        id: cache-vcpkg-installed
-        uses: actions/cache@v4
-        with:
-          path: |
-            vcpkg/installed/${{ matrix.triplet }}
-            vcpkg_installed/${{ matrix.triplet }}
-          key: ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-${{ matrix.triplet }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-installed-${{ hashFiles('vcpkg.json') }}-
-            ${{ runner.os }}-vcpkg-installed-
-        continue-on-error: true
-
-      - name: Cache vcpkg downloads
-        id: cache-vcpkg-downloads
-        uses: actions/cache@v4
-        with:
-          path: vcpkg/downloads
-          key: ${{ runner.os }}-vcpkg-downloads-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            ${{ runner.os }}-vcpkg-downloads-
 
       - name: Install build dependencies
         run: |
@@ -175,7 +139,6 @@ jobs:
       - name: Install dependencies
         run: |
           echo "Installing vcpkg packages for triplet: ${{ matrix.triplet }}"
-          echo "Cache hit status: ${{ steps.cache-vcpkg-installed.outputs.cache-hit }}"
           echo "Checking vcpkg installation directory before install:"
           if [ -d "./vcpkg/installed" ]; then
             ls -la "./vcpkg/installed/" || true
