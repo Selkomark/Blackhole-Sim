@@ -5,11 +5,32 @@
 set -e
 
 # Get the version from the Makefile
-VERSION=$(make -f Makefile print-version)
+VERSION="$1"
 
-# Tag the release
-if git rev-parse "prod-v$VERSION" >/dev/null 2>&1; then
-  git tag -a "prod-v$VERSION" -m "Release $VERSION"
+if [ -z "$VERSION" ]; then
+  echo "Usage: $0 <version>"
+  echo "Example: $0 1.0.1"
+  exit 1
 fi
 
-git push origin "prod-v$VERSION"
+TAG_NAME="prod-v$VERSION"
+
+# Check if tag exists locally and delete it
+if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+  echo "Tag '$TAG_NAME' exists locally. Deleting..."
+  git tag -d "$TAG_NAME"
+fi
+
+# Check if tag exists on remote and delete it
+if git ls-remote --tags origin "$TAG_NAME" | grep -q "$TAG_NAME"; then
+  echo "Tag '$TAG_NAME' exists on remote. Deleting..."
+  git push origin --delete "$TAG_NAME" || git push origin ":refs/tags/$TAG_NAME"
+fi
+
+# Create the tag
+echo "Creating tag '$TAG_NAME'..."
+git tag -a "$TAG_NAME" -m "Release $VERSION"
+
+# Push the tag
+echo "Pushing tag '$TAG_NAME' to origin..."
+git push origin "$TAG_NAME"

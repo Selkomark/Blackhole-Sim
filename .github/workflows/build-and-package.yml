@@ -97,9 +97,19 @@ jobs:
       # Check for Transporter EARLY (before build) to fail fast if not available
       # This saves time by detecting the issue before the long vcpkg build process
       - name: Check for Transporter (early validation)
-        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        if: github.ref_type == 'tag' && matrix.arch == 'arm64'
         id: check_transporter_early
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
         run: |
+          # Check if signing secrets are configured - skip if not
+          if [ -z "$MACOS_CERTIFICATE" ] || [ -z "$MACOS_CERTIFICATE_PASSWORD" ]; then
+            echo "⚠️  Signing secrets not configured, skipping Transporter check"
+            echo "   This step only runs when signing is enabled for App Store uploads"
+            exit 0
+          fi
+
           echo "🔍 Checking for Transporter/iTMSTransporter (early validation)..."
           echo "   This check runs before the build to fail fast if Transporter is missing"
 
