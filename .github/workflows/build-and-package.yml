@@ -1,22 +1,20 @@
 name: Build and Package
 
 # This workflow builds the Blackhole Sim application for both Intel (x86_64) and Apple Silicon (arm64)
-# architectures, creates DMG files, and uploads them as artifacts.
+# architectures and uploads to the App Store Connect.
 #
 # Triggers:
-#   - Push to main branch (uses default version 1.0) - uploads artifacts only
-#   - Tags matching 'prod-v*' pattern (e.g., prod-v1.0.0) - extracts version from tag and uploads as release assets
+#   - Tags matching 'prod-v*' pattern (e.g., prod-v1.0.0) - builds and uploads to App Store
 #   - Manual workflow dispatch (can specify version via input)
 #
 # Version Handling:
 #   - Tag format: prod-v<VERSION> (e.g., prod-v1.0.0 extracts version "1.0.0")
-#   - Version is used in DMG filenames, app bundle Info.plist, and artifact names
-#   - Default version for branch builds: 1.0
+#   - Version is used in app bundle Info.plist and App Store metadata
+#   - Default version for manual builds: 1.0
 #
 # Outputs:
-#   - DMG files for each architecture (Blackhole Sim-<VERSION>-<arch>.dmg)
-#   - For tag pushes: DMG files are uploaded as release assets on GitHub Releases
-#   - For branch pushes: DMG files are uploaded as workflow artifacts
+#   - .itmsp package automatically uploaded to App Store Connect
+#   - DMG files created as workflow artifacts (for testing/backup only)
 #
 # Note: Code signing is enabled if MACOS_CERTIFICATE and MACOS_CERTIFICATE_PASSWORD secrets are configured.
 # To set up signing:
@@ -25,7 +23,8 @@ name: Build and Package
 #   3. Add it as a GitHub secret: MACOS_CERTIFICATE
 #   4. Add the certificate password as another secret: MACOS_CERTIFICATE_PASSWORD
 #
-# Notarization is enabled for production releases (tags) if NOTARY_APPLE_ID, NOTARY_TEAM_ID, and NOTARY_PASSWORD secrets are configured.
+# Notarization is DISABLED for App Store builds (the App Store handles this during review).
+# Notarization is only needed for apps distributed outside the App Store (DMG downloads).
 #
 # App Store Connect upload is enabled if MACOS_INSTALLER_CERTIFICATE, MACOS_INSTALLER_CERTIFICATE_PASSWORD,
 # TRANSPORTER_APPLE_ID, and TRANSPORTER_PASSWORD secrets are configured.
@@ -37,13 +36,6 @@ name: Build and Package
 #   5. Create an app-specific password at appleid.apple.com
 #   6. Add your Apple ID as secret: TRANSPORTER_APPLE_ID
 #   7. Add the app-specific password as secret: TRANSPORTER_PASSWORD
-# To set up notarization:
-#   1. Create an app-specific password at https://appleid.apple.com
-#   2. Add secrets:
-#      - NOTARY_APPLE_ID: Your Apple ID email
-#      - NOTARY_TEAM_ID: Your Team ID (e.g., "72583G5MNU")
-#      - NOTARY_PASSWORD: App-specific password (not your regular password)
-#   3. Notarization adds 5-15 minutes to build time but is required for distribution
 
 on:
   push:
@@ -380,39 +372,46 @@ jobs:
           fi
           ./scripts/sign_app.sh
 
-      - name: Check notarization credentials
-        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag'
-        id: check_notary
-        run: |
-          if [ -n "${{ secrets.NOTARY_APPLE_ID }}" ] && [ -n "${{ secrets.NOTARY_TEAM_ID }}" ] && [ -n "${{ secrets.NOTARY_PASSWORD }}" ]; then
-            echo "notarization_enabled=true" >> $GITHUB_OUTPUT
-          else
-            echo "notarization_enabled=false" >> $GITHUB_OUTPUT
-            echo "⚠️  Notarization credentials not configured - skipping notarization"
-          fi
+      # Notarization is DISABLED for App Store builds
+      # The App Store handles signing and notarization during review
+      # Notarization is only needed for apps distributed outside the App Store (DMG downloads)
+      #
+      # - name: Check notarization credentials
+      #   if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag'
+      #   id: check_notary
+      #   run: |
+      #     if [ -n "${{ secrets.NOTARY_APPLE_ID }}" ] && [ -n "${{ secrets.NOTARY_TEAM_ID }}" ] && [ -n "${{ secrets.NOTARY_PASSWORD }}" ]; then
+      #       echo "notarization_enabled=true" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "notarization_enabled=false" >> $GITHUB_OUTPUT
+      #       echo "⚠️  Notarization credentials not configured - skipping notarization"
+      #     fi
+      #
+      # - name: Notarize app bundle
+      #   if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag' && steps.check_notary.outputs.notarization_enabled == 'true'
+      #   env:
+      #     NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+      #     NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+      #     NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+      #   timeout-minutes: 20
+      #   run: |
+      #     echo "🚀 Starting notarization (production release)..."
+      #     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      #     echo "⏱️  Notarization typically takes 5-15 minutes"
+      #     echo "   This is Apple's server-side security scan - cannot be sped up"
+      #     echo "   The workflow will wait automatically..."
+      #     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      #     ./scripts/notarize_app.sh
+      #     echo "✅ Notarization complete"
 
-      - name: Notarize app bundle
-        if: env.SIGNING_ENABLED == 'true' && github.ref_type == 'tag' && steps.check_notary.outputs.notarization_enabled == 'true'
-        env:
-          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
-          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
-          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
-        timeout-minutes: 20
-        run: |
-          echo "🚀 Starting notarization (production release)..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "⏱️  Notarization typically takes 5-15 minutes"
-          echo "   This is Apple's server-side security scan - cannot be sped up"
-          echo "   The workflow will wait automatically..."
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          ./scripts/notarize_app.sh
-          echo "✅ Notarization complete"
-
-      - name: Create DMG
+      # DMG creation is optional - only needed for testing or direct distribution
+      # App Store distribution doesn't require DMG files
+      - name: Create DMG (optional - for testing)
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           ./scripts/create_dmg.sh
+        continue-on-error: true
 
       - name: Create .itmsp package for App Store (production releases)
         if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true'
@@ -473,6 +472,8 @@ jobs:
           echo "📤 Uploading to App Store Connect..."
           ./scripts/upload_to_appstore.sh
 
+      # DMG artifacts are optional - mainly for testing/backup
+      # App Store distribution doesn't use DMG files
       - name: Rename DMG with architecture
         run: |
           cd export
@@ -480,14 +481,16 @@ jobs:
           if [ -f "Blackhole Sim-${VERSION}.dmg" ]; then
             mv "Blackhole Sim-${VERSION}.dmg" "Blackhole Sim-${VERSION}-${{ matrix.arch }}.dmg"
           fi
+        continue-on-error: true
 
-      - name: Upload DMG artifact
+      - name: Upload DMG artifact (optional - for testing)
         uses: actions/upload-artifact@v4
         with:
           name: BlackholeSim-${{ steps.version.outputs.version }}-${{ matrix.arch }}-dmg
           path: export/Blackhole Sim-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg
-          retention-days: 30
-          if-no-files-found: error
+          retention-days: 7
+          if-no-files-found: warn
+        continue-on-error: true
 
       - name: Upload .itmsp package artifact (App Store)
         if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
@@ -519,58 +522,63 @@ jobs:
             echo "- ⚠️ Code signed: No (secrets not configured)" >> $GITHUB_STEP_SUMMARY
           fi
           echo "- Version: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- DMG: Blackhole Sim-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" >> $GITHUB_STEP_SUMMARY
           if [ "${{ github.ref_type }}" = "tag" ] && [ "${SIGNING_ENABLED:-false}" = "true" ] && [ "${{ matrix.arch }}" = "arm64" ]; then
             echo "- 📦 App Store: Blackhole Sim.itmsp (automatically uploaded)" >> $GITHUB_STEP_SUMMARY
           fi
-
-  # Upload release assets when triggered by a tag
-  upload-release:
-    needs: build
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'prod-v')
-    runs-on: macos-latest
-    permissions:
-      contents: write # Required to create/update releases and upload release assets
-
-    steps:
-      - name: Extract version from tag
-        id: version
-        run: |
-          if [[ "${{ github.ref_name }}" =~ ^prod-v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "✅ Extracted version from tag: $VERSION"
-          else
-            echo "❌ Error: Tag format invalid"
-            exit 1
+          if [ -f "export/Blackhole Sim-${{ steps.version.outputs.version }}-${{ matrix.arch }}.dmg" ]; then
+            echo "- 💾 DMG: Created (available as artifact for testing)" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: BlackholeSim-${{ steps.version.outputs.version }}-*-dmg
-          merge-multiple: false
-          path: release-assets
-
-      - name: Find and prepare DMG files
-        run: |
-          echo "Looking for DMG files in release-assets..."
-          find release-assets -name "*.dmg" -type f
-          # Count DMG files found
-          DMG_COUNT=$(find release-assets -name "*.dmg" -type f | wc -l | tr -d ' ')
-          echo "Found $DMG_COUNT DMG file(s)"
-          if [ "$DMG_COUNT" -eq 0 ]; then
-            echo "❌ Error: No DMG files found!"
-            exit 1
-          fi
-
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v1
-        with:
-          files: release-assets/**/*.dmg
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # GitHub Releases DISABLED - App Store distribution only
+  # DMG files are not needed since the app is distributed via the App Store
+  # The App Store handles versioning and distribution automatically
+  #
+  # upload-release:
+  #   needs: build
+  #   if: github.ref_type == 'tag' && startsWith(github.ref_name, 'prod-v')
+  #   runs-on: macos-latest
+  #   permissions:
+  #     contents: write # Required to create/update releases and upload release assets
+  #
+  #   steps:
+  #     - name: Extract version from tag
+  #       id: version
+  #       run: |
+  #         if [[ "${{ github.ref_name }}" =~ ^prod-v(.+)$ ]]; then
+  #           VERSION="${BASH_REMATCH[1]}"
+  #           echo "version=$VERSION" >> $GITHUB_OUTPUT
+  #           echo "✅ Extracted version from tag: $VERSION"
+  #         else
+  #           echo "❌ Error: Tag format invalid"
+  #           exit 1
+  #         fi
+  #
+  #     - name: Download all artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         pattern: BlackholeSim-${{ steps.version.outputs.version }}-*-dmg
+  #         merge-multiple: false
+  #         path: release-assets
+  #
+  #     - name: Find and prepare DMG files
+  #       run: |
+  #         echo "Looking for DMG files in release-assets..."
+  #         find release-assets -name "*.dmg" -type f
+  #         # Count DMG files found
+  #         DMG_COUNT=$(find release-assets -name "*.dmg" -type f | wc -l | tr -d ' ')
+  #         echo "Found $DMG_COUNT DMG file(s)"
+  #         if [ "$DMG_COUNT" -eq 0 ]; then
+  #           echo "❌ Error: No DMG files found!"
+  #           exit 1
+  #         fi
+  #
+  #     - name: Upload release assets
+  #       uses: softprops/action-gh-release@v1
+  #       with:
+  #         files: release-assets/**/*.dmg
+  #         tag_name: ${{ github.ref_name }}
+  #         name: Release ${{ steps.version.outputs.version }}
+  #         draft: false
+  #         prerelease: false
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
