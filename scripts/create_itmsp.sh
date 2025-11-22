@@ -48,6 +48,35 @@ fi
 
 echo "✅ Created .pkg installer"
 
+# Sign the .pkg with "3rd Party Mac Developer Installer" certificate if available
+echo "Checking for installer certificate to sign .pkg..."
+INSTALLER_LINE=$(security find-identity -v -p macappstore 2>/dev/null | grep "3rd Party Mac Developer Installer" | head -1 || true)
+
+if [ -n "$INSTALLER_LINE" ]; then
+    INSTALLER_HASH=$(echo "$INSTALLER_LINE" | awk '{print $2}')
+    INSTALLER_NAME=$(echo "$INSTALLER_LINE" | sed 's/.*"\(.*\)"/\1/')
+    
+    echo "Found installer certificate: $INSTALLER_NAME"
+    echo "Signing .pkg installer..."
+    
+    if productsign --sign "$INSTALLER_HASH" "$PKG_PATH" "${PKG_PATH}.signed" 2>&1; then
+        if [ -f "${PKG_PATH}.signed" ]; then
+            mv "${PKG_PATH}.signed" "$PKG_PATH"
+            echo "✅ Signed .pkg installer"
+            
+            # Verify the signature
+            if pkgutil --check-signature "$PKG_PATH" &>/dev/null; then
+                echo "✅ Package signature verified"
+            fi
+        fi
+    else
+        echo "⚠️  Failed to sign .pkg (will be unsigned)"
+    fi
+else
+    echo "⚠️  No installer certificate found - .pkg will be unsigned"
+    echo "   For App Store uploads, the .pkg should be signed"
+fi
+
 # Create metadata.xml
 # For macOS apps, reference the .pkg file (not the .app bundle)
 echo "Creating metadata.xml..."

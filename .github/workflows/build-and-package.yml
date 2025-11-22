@@ -464,17 +464,42 @@ jobs:
           fi
         id: import_installer_cert
 
+      # Create .itmsp package for App Store (production releases)
+      # This creates the signed .pkg and .itmsp package
+      # Upload will be attempted separately if iTMSTransporter is available
+      - name: Create .itmsp package for App Store (production releases)
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Ensure keychain is accessible for .pkg signing
+          if [ -f $RUNNER_TEMP/keychain_path.txt ]; then
+            KEYCHAIN_PATH=$(cat $RUNNER_TEMP/keychain_path.txt)
+            security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+            security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          fi
+
+          echo "📦 Creating .itmsp package for App Store Connect..."
+          echo "   This includes creating and signing the .pkg installer"
+          
+          # Create .itmsp package (create_itmsp.sh will sign .pkg if installer certificate is available)
+          ./scripts/create_itmsp.sh
+          
+          echo "✅ .itmsp package created: export/Blackhole Sim.itmsp"
+
       # Check for Transporter/iTMSTransporter
       # Note: mas-cli requires interactive App Store authentication, which doesn't work in CI/CD
       # Instead, we rely on GitHub Actions runners having Transporter pre-installed or available via Xcode
       - name: Check for Transporter
         if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        id: check_transporter
         run: |
           echo "🔍 Checking for Transporter/iTMSTransporter..."
           
           # Check if Transporter.app is installed
           if [ -d "/Applications/Transporter.app" ] && [ -f "/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter" ]; then
             echo "✅ Transporter.app found: /Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
+            echo "transporter_available=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -490,6 +515,7 @@ jobs:
             for path in "${XCODE_PATHS[@]}"; do
               if [ -f "$path" ]; then
                 echo "✅ Found iTMSTransporter in Xcode: $path"
+                echo "transporter_available=true" >> $GITHUB_OUTPUT
                 exit 0
               fi
             done
@@ -498,6 +524,7 @@ jobs:
           # Check common system locations
           if [ -f "/usr/local/itms/bin/iTMSTransporter" ]; then
             echo "✅ Found iTMSTransporter: /usr/local/itms/bin/iTMSTransporter"
+            echo "transporter_available=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -505,27 +532,26 @@ jobs:
           FOUND=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f 2>/dev/null | head -1)
           if [ -n "$FOUND" ]; then
             echo "✅ Found iTMSTransporter: $FOUND"
+            echo "transporter_available=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          echo "⚠️  iTMSTransporter not found in common locations"
-          echo "   The upload script will perform a more thorough search"
-          echo "   If upload fails, Transporter may need to be pre-installed on the runner"
-          echo ""
-          echo "Note: mas-cli installation was skipped because it requires interactive"
-          echo "      App Store authentication, which doesn't work in CI/CD environments."
+          echo "⚠️  iTMSTransporter not found"
+          echo "   Upload to App Store Connect will be skipped"
+          echo "   The .itmsp package will be available as an artifact for manual upload"
+          echo "transporter_available=false" >> $GITHUB_OUTPUT
 
-      # Upload to App Store Connect - matches 'make upload' behavior
-      # This script handles: .pkg creation, .pkg signing, .itmsp creation, and upload
+      # Upload to App Store Connect - only if iTMSTransporter is available
       - name: Upload to App Store Connect (production releases)
-        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64' && steps.check_transporter.outputs.transporter_available == 'true'
         env:
           TRANSPORTER_APPLE_ID: ${{ secrets.TRANSPORTER_APPLE_ID }}
           TRANSPORTER_PASSWORD: ${{ secrets.TRANSPORTER_PASSWORD }}
           APP_VERSION: ${{ steps.version.outputs.version }}
         timeout-minutes: 30
+        continue-on-error: true
         run: |
-          # Ensure keychain is accessible (upload_to_appstore.sh needs it)
+          # Ensure keychain is accessible
           if [ -f $RUNNER_TEMP/keychain_path.txt ]; then
             KEYCHAIN_PATH=$(cat $RUNNER_TEMP/keychain_path.txt)
             security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
@@ -539,10 +565,13 @@ jobs:
             exit 0
           fi
 
-          # Call upload_to_appstore.sh - matches 'make upload' behavior exactly
-          # This script handles everything: .pkg creation, signing, .itmsp creation, and upload
+          # Upload using upload_to_appstore.sh (it will find the existing .itmsp and upload it)
           echo "📤 Uploading to App Store Connect..."
-          ./scripts/upload_to_appstore.sh
+          ./scripts/upload_to_appstore.sh || {
+            echo "⚠️  Upload failed"
+            echo "   The .itmsp package is available as an artifact for manual upload"
+            exit 0  # Don't fail the workflow
+          }
 
       # DMG creation is optional - only needed for testing or direct distribution
       # App Store distribution doesn't require DMG files
@@ -580,7 +609,8 @@ jobs:
           name: BlackholeSim-${{ steps.version.outputs.version }}-appstore-itmsp
           path: export/Blackhole Sim.itmsp
           retention-days: 30
-          if-no-files-found: error
+          if-no-files-found: warn
+        continue-on-error: true
 
       - name: Cleanup keychain
         if: always()

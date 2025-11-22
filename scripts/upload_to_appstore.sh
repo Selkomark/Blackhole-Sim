@@ -115,6 +115,12 @@ echo ""
 # Create .itmsp package
 echo -e "${BLUE}Creating .itmsp package for Transporter...${NC}"
 
+# Check if .itmsp already exists (e.g., created by create_itmsp.sh in CI/CD)
+if [ -d "$ITMSP_PATH" ] && [ -f "$ITMSP_PATH/metadata.xml" ] && [ -f "$ITMSP_PATH/${APP_NAME}.pkg" ]; then
+    echo -e "${GREEN}✓ .itmsp package already exists, using existing package${NC}"
+    echo "   Package: $ITMSP_PATH"
+    SKIP_ITMSP_CREATION=true
+else
 # Remove old .itmsp if exists
 if [ -d "$ITMSP_PATH" ]; then
     echo "Removing old .itmsp package..."
@@ -123,9 +129,13 @@ fi
 
 # Create .itmsp directory
 mkdir -p "$ITMSP_PATH"
+    SKIP_ITMSP_CREATION=false
+fi
 
-# Create .pkg installer from app bundle (required for App Store uploads)
-echo "Creating .pkg installer..."
+# Only create .itmsp if it doesn't already exist
+if [ "$SKIP_ITMSP_CREATION" != "true" ]; then
+    # Create .pkg installer from app bundle (required for App Store uploads)
+    echo "Creating .pkg installer..."
 PKG_FILE="${APP_NAME}.pkg"
 PKG_PATH="$ITMSP_PATH/$PKG_FILE"
 
@@ -200,17 +210,22 @@ cat > "$ITMSP_PATH/metadata.xml" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <package version="software5.4" xmlns="http://apple.com/itunes/importer">
 <software_assets>
-<asset type="bundle">
-<data_file>
+        <asset type="bundle">
+            <data_file>
 <file_name>${PKG_FILE}</file_name>
-</data_file>
-</asset>
-</software_assets>
+            </data_file>
+        </asset>
+    </software_assets>
 </package>
 EOF
 
 echo -e "${GREEN}✓ Created .itmsp package: $ITMSP_PATH${NC}"
 echo ""
+else
+    # Use existing .itmsp, just clean extended attributes
+    echo "Cleaning extended attributes on existing .itmsp..."
+    xattr -cr "$ITMSP_PATH" 2>/dev/null || true
+fi
 
 # Command-line upload (required for CI/CD)
 echo -e "${BLUE}Using command-line upload...${NC}"
