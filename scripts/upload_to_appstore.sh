@@ -32,7 +32,7 @@ VERSION="1.0"
 
 # Transporter configuration
 TRANSPORTER_APP="/Applications/Transporter.app"
-TRANSPORTER_BIN="${TRANSPORTER_APP}/Contents/itms/bin/iTMSTransporter"
+# TRANSPORTER_BIN will be found dynamically below (supports CI/CD environments)
 APPLE_ID="${TRANSPORTER_APPLE_ID:-}"
 APP_SPECIFIC_PASSWORD="${TRANSPORTER_PASSWORD:-}"
 
@@ -212,16 +212,7 @@ EOF
 echo -e "${GREEN}✓ Created .itmsp package: $ITMSP_PATH${NC}"
 echo ""
 
-# Check if Transporter is available
-if [ ! -d "$TRANSPORTER_APP" ]; then
-    echo -e "${RED}❌ Transporter.app not found at: $TRANSPORTER_APP${NC}"
-    echo ""
-    echo "Please install Transporter from the Mac App Store:"
-    echo "  https://apps.apple.com/app/transporter/id1450874784"
-    exit 1
-fi
-
-# Command-line upload (required)
+# Command-line upload (required for CI/CD)
 echo -e "${BLUE}Using command-line upload...${NC}"
 echo ""
 
@@ -251,14 +242,43 @@ if [ -z "$APP_SPECIFIC_PASSWORD" ]; then
     exit 1
 fi
 
+# Find iTMSTransporter CLI binary (try multiple locations)
+TRANSPORTER_BIN=""
+if [ -f "$TRANSPORTER_APP/Contents/itms/bin/iTMSTransporter" ]; then
+    # Standard location (when Transporter.app is installed)
+    TRANSPORTER_BIN="$TRANSPORTER_APP/Contents/itms/bin/iTMSTransporter"
+elif [ -f "/usr/local/itms/bin/iTMSTransporter" ]; then
+    # Alternative location (Xcode Command Line Tools)
+    TRANSPORTER_BIN="/usr/local/itms/bin/iTMSTransporter"
+elif command -v iTMSTransporter &> /dev/null; then
+    # In PATH
+    TRANSPORTER_BIN=$(command -v iTMSTransporter)
+else
+    # Try to find it in common Xcode locations
+    XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
+    if [ -n "$XCODE_PATH" ] && [ -f "$XCODE_PATH/../itms/bin/iTMSTransporter" ]; then
+        TRANSPORTER_BIN="$XCODE_PATH/../itms/bin/iTMSTransporter"
+    fi
+fi
+
 # Check if command-line binary exists
-if [ ! -f "$TRANSPORTER_BIN" ]; then
-    echo -e "${RED}❌ Transporter CLI binary not found at: $TRANSPORTER_BIN${NC}"
+if [ -z "$TRANSPORTER_BIN" ] || [ ! -f "$TRANSPORTER_BIN" ]; then
+    echo -e "${RED}❌ Transporter CLI binary (iTMSTransporter) not found${NC}"
     echo ""
-    echo "Please install Transporter from the Mac App Store:"
+    echo "Tried locations:"
+    echo "  - $TRANSPORTER_APP/Contents/itms/bin/iTMSTransporter"
+    echo "  - /usr/local/itms/bin/iTMSTransporter"
+    echo "  - In PATH"
+    echo ""
+    echo "For local development, install Transporter from the Mac App Store:"
     echo "  https://apps.apple.com/app/transporter/id1450874784"
+    echo ""
+    echo "For CI/CD, ensure Xcode Command Line Tools are installed."
     exit 1
 fi
+
+echo -e "${GREEN}✓ Found Transporter CLI: $TRANSPORTER_BIN${NC}"
+echo ""
 
 echo -e "${GREEN}✓ Transporter CLI found${NC}"
 echo ""
