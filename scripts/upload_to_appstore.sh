@@ -244,20 +244,48 @@ fi
 
 # Find iTMSTransporter CLI binary (try multiple locations)
 TRANSPORTER_BIN=""
+
+# 1. Standard location (when Transporter.app is installed)
 if [ -f "$TRANSPORTER_APP/Contents/itms/bin/iTMSTransporter" ]; then
-    # Standard location (when Transporter.app is installed)
     TRANSPORTER_BIN="$TRANSPORTER_APP/Contents/itms/bin/iTMSTransporter"
-elif [ -f "/usr/local/itms/bin/iTMSTransporter" ]; then
-    # Alternative location (Xcode Command Line Tools)
-    TRANSPORTER_BIN="/usr/local/itms/bin/iTMSTransporter"
-elif command -v iTMSTransporter &> /dev/null; then
-    # In PATH
+fi
+
+# 2. Check if in PATH
+if [ -z "$TRANSPORTER_BIN" ] && command -v iTMSTransporter &> /dev/null; then
     TRANSPORTER_BIN=$(command -v iTMSTransporter)
-else
-    # Try to find it in common Xcode locations
+fi
+
+# 3. Check Xcode locations
+if [ -z "$TRANSPORTER_BIN" ]; then
     XCODE_PATH=$(xcode-select -p 2>/dev/null || echo "")
-    if [ -n "$XCODE_PATH" ] && [ -f "$XCODE_PATH/../itms/bin/iTMSTransporter" ]; then
-        TRANSPORTER_BIN="$XCODE_PATH/../itms/bin/iTMSTransporter"
+    if [ -n "$XCODE_PATH" ]; then
+        # Try various Xcode paths
+        XCODE_PATHS=(
+            "$XCODE_PATH/../itms/bin/iTMSTransporter"
+            "$XCODE_PATH/../SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
+            "/Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
+            "/Library/Developer/CommandLineTools/itms/bin/iTMSTransporter"
+        )
+        
+        for path in "${XCODE_PATHS[@]}"; do
+            if [ -f "$path" ]; then
+                TRANSPORTER_BIN="$path"
+                break
+            fi
+        done
+    fi
+fi
+
+# 4. Check /usr/local/itms (Command Line Tools)
+if [ -z "$TRANSPORTER_BIN" ] && [ -f "/usr/local/itms/bin/iTMSTransporter" ]; then
+    TRANSPORTER_BIN="/usr/local/itms/bin/iTMSTransporter"
+fi
+
+# 5. Try to find it anywhere in common directories
+if [ -z "$TRANSPORTER_BIN" ]; then
+    FOUND=$(find /Applications /Library/Developer /usr/local -name "iTMSTransporter" -type f 2>/dev/null | head -1)
+    if [ -n "$FOUND" ]; then
+        TRANSPORTER_BIN="$FOUND"
     fi
 fi
 
@@ -265,22 +293,27 @@ fi
 if [ -z "$TRANSPORTER_BIN" ] || [ ! -f "$TRANSPORTER_BIN" ]; then
     echo -e "${RED}❌ Transporter CLI binary (iTMSTransporter) not found${NC}"
     echo ""
-    echo "Tried locations:"
+    echo "Searched locations:"
     echo "  - $TRANSPORTER_APP/Contents/itms/bin/iTMSTransporter"
+    echo "  - In PATH (via 'command -v')"
+    if [ -n "$XCODE_PATH" ]; then
+        echo "  - $XCODE_PATH/../itms/bin/iTMSTransporter"
+        echo "  - $XCODE_PATH/../SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
+    fi
+    echo "  - /Applications/Xcode.app/Contents/SharedFrameworks/ContentDeliveryServices.framework/Versions/A/itms/bin/iTMSTransporter"
+    echo "  - /Library/Developer/CommandLineTools/itms/bin/iTMSTransporter"
     echo "  - /usr/local/itms/bin/iTMSTransporter"
-    echo "  - In PATH"
+    echo "  - Common directories (/Applications, /Library/Developer, /usr/local)"
     echo ""
     echo "For local development, install Transporter from the Mac App Store:"
     echo "  https://apps.apple.com/app/transporter/id1450874784"
     echo ""
-    echo "For CI/CD, ensure Xcode Command Line Tools are installed."
+    echo "For CI/CD, the workflow should install Transporter automatically."
+    echo "If this error persists, check the 'Install Transporter' step in the workflow."
     exit 1
 fi
 
 echo -e "${GREEN}✓ Found Transporter CLI: $TRANSPORTER_BIN${NC}"
-echo ""
-
-echo -e "${GREEN}✓ Transporter CLI found${NC}"
 echo ""
 
 # Validate package structure first
