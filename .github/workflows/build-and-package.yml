@@ -327,15 +327,50 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" $KEYCHAIN_PATH
 
           # Find and export the signing identity (App Store certificate)
-          IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | \
-            grep -E "(Apple Distribution|3rd Party Mac Developer Application)" | \
+          echo "🔍 Searching for App Store certificates..."
+          echo "Available certificates in keychain:"
+          security find-identity -v -p codesigning $KEYCHAIN_PATH || true
+          echo ""
+
+          # Try multiple patterns to find App Store certificate
+          # Priority: Apple Distribution > 3rd Party Mac Developer Application > Mac App Distribution
+          IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH 2>/dev/null | \
+            grep -i "Apple Distribution" | \
             head -1 | \
             sed -n 's/.*"\(.*\)".*/\1/p')
+
+          if [ -z "$IDENTITY" ]; then
+            IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH 2>/dev/null | \
+              grep -i "3rd Party Mac Developer Application" | \
+              head -1 | \
+              sed -n 's/.*"\(.*\)".*/\1/p')
+          fi
+
+          if [ -z "$IDENTITY" ]; then
+            IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH 2>/dev/null | \
+              grep -i "Mac App Distribution" | \
+              head -1 | \
+              sed -n 's/.*"\(.*\)".*/\1/p')
+          fi
+
+          # If still not found, try to find any certificate that's NOT Developer ID
+          if [ -z "$IDENTITY" ]; then
+            echo "⚠️  App Store certificate not found with standard patterns, trying alternative search..."
+            ALL_CERTS=$(security find-identity -v -p codesigning $KEYCHAIN_PATH 2>/dev/null)
+            IDENTITY=$(echo "$ALL_CERTS" | \
+              grep -v "Developer ID" | \
+              grep -v "Apple Development" | \
+              head -1 | \
+              sed -n 's/.*"\(.*\)".*/\1/p')
+          fi
 
           if [ -z "$IDENTITY" ]; then
             echo "❌ Error: Could not find App Store certificate"
             echo "   Expected: Apple Distribution or 3rd Party Mac Developer Application"
             echo "   Check that MACOS_CERTIFICATE contains the correct App Store certificate"
+            echo ""
+            echo "All available certificates:"
+            security find-identity -v -p codesigning $KEYCHAIN_PATH || true
             security list-keychain -d user -s login.keychain
             exit 1
           fi
@@ -390,25 +425,9 @@ jobs:
       #     ./scripts/notarize_app.sh
       #     echo "✅ Notarization complete"
 
-      # DMG creation is optional - only needed for testing or direct distribution
-      # App Store distribution doesn't require DMG files
-      - name: Create DMG (optional - for testing)
-        env:
-          APP_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          ./scripts/create_dmg.sh
-        continue-on-error: true
-
-      - name: Create .itmsp package for App Store (production releases)
-        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true'
-        env:
-          APP_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          echo "📦 Creating .itmsp package for App Store Connect..."
-          ./scripts/create_itmsp.sh
-          echo "✅ .itmsp package created: export/Blackhole Sim.itmsp"
-
-      - name: Import Mac Installer Distribution certificate for .pkg signing
+      # Import Mac Installer Distribution certificate for .pkg signing
+      # This must be done before calling upload_to_appstore.sh
+      - name: Import Mac Installer Distribution certificate
         if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
         env:
           MACOS_INSTALLER_CERTIFICATE: ${{ secrets.MACOS_INSTALLER_CERTIFICATE }}
@@ -416,8 +435,9 @@ jobs:
         run: |
           # Check if installer certificate secrets are configured
           if [ -z "$MACOS_INSTALLER_CERTIFICATE" ] || [ -z "$MACOS_INSTALLER_CERTIFICATE_PASSWORD" ]; then
-            echo "⚠️  Installer certificate secrets not configured, skipping .pkg signing"
-            echo "   Upload to App Store Connect will be skipped"
+            echo "⚠️  Installer certificate secrets not configured"
+            echo "   .pkg will be created but not signed"
+            echo "installer_cert_available=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -432,22 +452,35 @@ jobs:
           rm $CERTIFICATE_PATH
 
           # Verify the certificate is available
+          # Use macappstore policy to find installer certificates
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
           if security find-identity -v -p macappstore | grep -q "3rd Party Mac Developer Installer"; then
             echo "✅ Mac Installer Distribution certificate imported successfully"
             echo "installer_cert_available=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  Warning: Certificate imported but not found in keychain"
-            echo "installer_cert_available=false" >> $GITHUB_OUTPUT
+            echo "⚠️  Warning: Certificate imported but not found with macappstore policy"
+            echo "   It may still work - upload_to_appstore.sh will try to use it"
+            echo "installer_cert_available=true" >> $GITHUB_OUTPUT
           fi
         id: import_installer_cert
 
+      # Upload to App Store Connect - matches 'make upload' behavior
+      # This script handles: .pkg creation, .pkg signing, .itmsp creation, and upload
       - name: Upload to App Store Connect (production releases)
-        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64' && steps.import_installer_cert.outputs.installer_cert_available == 'true'
+        if: github.ref_type == 'tag' && env.SIGNING_ENABLED == 'true' && matrix.arch == 'arm64'
         env:
           TRANSPORTER_APPLE_ID: ${{ secrets.TRANSPORTER_APPLE_ID }}
           TRANSPORTER_PASSWORD: ${{ secrets.TRANSPORTER_PASSWORD }}
+          APP_VERSION: ${{ steps.version.outputs.version }}
         timeout-minutes: 30
         run: |
+          # Ensure keychain is accessible (upload_to_appstore.sh needs it)
+          if [ -f $RUNNER_TEMP/keychain_path.txt ]; then
+            KEYCHAIN_PATH=$(cat $RUNNER_TEMP/keychain_path.txt)
+            security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain
+            security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          fi
+
           # Check if Transporter credentials are configured
           if [ -z "$TRANSPORTER_APPLE_ID" ] || [ -z "$TRANSPORTER_PASSWORD" ]; then
             echo "⚠️  Transporter credentials not configured, skipping App Store Connect upload"
@@ -455,8 +488,19 @@ jobs:
             exit 0
           fi
 
+          # Call upload_to_appstore.sh - matches 'make upload' behavior exactly
+          # This script handles everything: .pkg creation, signing, .itmsp creation, and upload
           echo "📤 Uploading to App Store Connect..."
           ./scripts/upload_to_appstore.sh
+
+      # DMG creation is optional - only needed for testing or direct distribution
+      # App Store distribution doesn't require DMG files
+      - name: Create DMG (optional - for testing)
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./scripts/create_dmg.sh
+        continue-on-error: true
 
       # DMG artifacts are optional - mainly for testing/backup
       # App Store distribution doesn't use DMG files
